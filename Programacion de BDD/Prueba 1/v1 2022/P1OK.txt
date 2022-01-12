@@ -1,0 +1,109 @@
+
+
+------------------------------------------
+
+-- PRUEBA 1
+-- FREDDY CAMPOS
+-- Nombre :Jorge Quintui
+-- NOTA : 7.0
+------------------------------------------
+
+
+-- VARIABLES BIND 
+
+-- Año de proceso fijo (Fecha actual)
+VARIABLE b_anio_proceso VARCHAR2(4);
+
+EXECUTE :b_anio_proceso := to_char( sysdate,'YYYY');
+
+PRINT :b_anio_proceso;
+
+-- SECUENCIAS 
+
+-- Secuencia para almacenar los alumnos aprobados
+CREATE SEQUENCE seq_resumen_aprobados;
+
+--Sólo se consideran alumnos de 1ro y 2do medio
+-- Redondear a 2 decimales
+-- TABLA RESUMEN APROBADOS
+
+
+-- Activamos la salida de DBMS
+SET SERVEROUTPUT ON;
+
+
+---------------------------------------------------------------
+
+-- DESARROLLO DEL PROCESO
+
+---------------------------------------------------------------
+
+DECLARE
+    -- Registro para almacenar los datos del alumno
+    reg_promedio_alumno promedio_asig_alumno%rowtype;
+    v_situacion   tramo_situacion_asig.situacion%TYPE;
+    
+    -- Registro para almacenar los alumnos aprobados 
+    reg_resumen_aprob resumen_aprobados%rowtype;
+
+BEGIN
+
+-- 1.
+
+    -- OBJETIVO
+    -- Calcular promedio
+    -- Definir situación con tabla de tramo
+    FOR X IN (SELECT N.cod_alumno, N.cod_asignatura, nota1, nota2, nota3, nota4, nota5
+                            FROM nota_alumno N
+                            INNER JOIN alumno A
+                            ON N.cod_alumno = A.cod_alumno
+                            INNER JOIN curso C
+                            ON A.cod_curso = C.cod_curso
+                            WHERE C.cod_curso IN (211,212,221,222)) 
+    LOOP
+        BEGIN
+            -- PROMEDIO
+            reg_promedio_alumno.promedio_asig := round((X.nota1 + X.nota2 + X.nota3 + X.nota4 + X.nota5) / 5, 2);
+            -- SITUACIÓN
+            SELECT situacion INTO v_situacion FROM tramo_situacion_asig WHERE reg_promedio_alumno.promedio_asig  BETWEEN promedio_inf AND promedio_sup;
+            reg_promedio_alumno.situacion_asig := v_situacion;
+            
+            -- INSERTAR EN LA TABLA PROMEDIO ASIG_ALUMNO
+            INSERT INTO promedio_asig_alumno VALUES (X.cod_alumno, X.cod_asignatura, reg_promedio_alumno.promedio_asig, reg_promedio_alumno.situacion_asig);
+            COMMIT;
+            
+            EXCEPTION
+                WHEN OTHERS THEN
+                    dbms_output.put_line('No se pudo procesar el alumno con el código ' || X.cod_alumno);
+        END;
+    END LOOP;
+
+-- 2.
+
+    -- OBJETIVO 
+    -- Poblar tabla Resumen aprobados
+    FOR I IN 
+        (SELECT numrut_alumno,dvrut_alumno, pnombre_alumno, snombre_alumno, appat_alumno, apmat_alumno, C.sigla_curso, asig.sigla_asignatura
+            FROM  alumno A
+            INNER JOIN curso C
+            ON A.cod_curso = C.cod_curso
+            INNER JOIN promedio_asig_alumno P
+            ON A.cod_alumno = P.cod_alumno
+            INNER JOIN asignatura asig
+            ON P.cod_asignatura = asig.cod_asignatura
+            WHERE C.cod_curso IN (211,212,221,222))
+    LOOP 
+        BEGIN
+            -- INSERTAR DATOS EN LA TABLA RESUMEN APROBADOS
+            INSERT INTO resumen_aprobados VALUES (seq_resumen_aprobados.NEXTVAL,  I.numrut_alumno, I.dvrut_alumno, I.pnombre_alumno, I.snombre_alumno, I.appat_alumno, I.apmat_alumno, I.sigla_curso, I.sigla_asignatura, :b_anio_proceso);
+            COMMIT;
+            
+        EXCEPTION
+            WHEN OTHERS THEN 
+                dbms_output.put_line('No se pudo procesar el alumno con el rut ' ||  I.numrut_alumno);
+        END;
+    END LOOP;
+ 
+END;
+
+

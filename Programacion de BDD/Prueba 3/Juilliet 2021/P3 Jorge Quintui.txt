@@ -1,0 +1,336 @@
+
+-----------------------------------
+-- PRUEBA 3
+-- NOMBRE : Jorge Quintui
+-- Profesor : Juilliet
+-- Nota : ?
+-- AÑO : 2021
+ 
+-----------------------------------
+-----------------------------------
+
+
+
+-- PARTE 1
+
+----------------------------------------------------
+--                 TRIGGER                        --
+----------------------------------------------------
+
+CREATE OR REPLACE TRIGGER trg_comision
+AFTER INSERT OR UPDATE OR DELETE ON boleta
+FOR EACH ROW
+DECLARE 
+    v_comision comision_venta.valor_comision%TYPE;
+BEGIN
+    IF inserting THEN
+        v_comision := round(:NEW.monto_boleta * 0.15);
+        INSERT INTO comision_venta VALUES (:NEW.nro_boleta, v_comision);
+    ELSIF updating THEN 
+        IF :NEW.monto_boleta > :OLD.monto_boleta THEN
+            v_comision := round(:NEW.monto_boleta * 0.15);
+            UPDATE comision_venta SET valor_comision = v_comision WHERE nro_boleta = :NEW.nro_boleta;
+        END IF;
+    ELSIF deleting THEN 
+        DELETE comision_venta WHERE nro_boleta = :OLD.nro_boleta;
+    END IF;
+END trg_comision;
+
+
+
+----------------------------------------------------
+             -- INSERT -- UPDATE -- DELETE --
+----------------------------------------------------
+BEGIN
+    -- INSERT 
+    INSERT INTO boleta VALUES(28,'26/06/2021',258999,3000,12456905);
+    -- UPDATE 
+    UPDATE boleta SET monto_boleta = 558590 WHERE nro_boleta = 24;
+    UPDATE boleta SET monto_boleta = 60000 WHERE nro_boleta = 27;
+    -- DELETE 
+    DELETE FROM boleta WHERE nro_boleta = 22;
+    COMMIT;
+END;
+
+----------------------------------------------------
+--                   TEST                         --
+----------------------------------------------------
+SELECT * FROM comision_venta WHERE nro_boleta = 28;
+SELECT * FROM comision_venta WHERE nro_boleta = 24;
+SELECT * FROM comision_venta WHERE nro_boleta = 27;
+SELECT * FROM comision_venta WHERE nro_boleta = 22;
+----------------------------------------------------
+
+
+-- PARTE 2
+
+-- Valor Colación Monto Fijo año 2021
+-- v_colacion = $40.000
+----------------------------------------------------
+-- SUBPROGRAMAS ADICIONALES
+----------------------------------------------------
+
+CREATE OR REPLACE PACKAGE pkg_operaciones IS
+    v_colacion NUMBER DEFAULT 40000;
+    v_descripcion error_proceso_remun.descrip_error%TYPE;
+    FUNCTION fn_obtener_sueldo_emp(rut_empleado IN NUMBER) RETURN NUMBER;
+    PROCEDURE sp_truncar_tabla(nombre_tabla IN VARCHAR2);
+    FUNCTION fn_obtener_annos(rut_empleado IN NUMBER) RETURN NUMBER;
+    FUNCTION fn_obtener_porc_bonificacion(annos IN NUMBER)RETURN NUMBER;
+END pkg_operaciones;
+
+CREATE OR REPLACE PACKAGE BODY pkg_operaciones IS 
+    FUNCTION fn_obtener_sueldo_emp(rut_empleado IN NUMBER) RETURN NUMBER IS
+        v_sueldo NUMBER;
+    BEGIN 
+        SELECT sueldo_base_emp INTO v_sueldo FROM empleado WHERE numrut_emp = rut_empleado;
+        RETURN v_sueldo;
+    EXCEPTION
+        WHEN no_data_found THEN
+            pkg_operaciones.v_descripcion := sqlerrm;
+            INSERT INTO error_proceso_remun VALUES (seq_error.NEXTVAL,'ERROR PKG_OPERACIONES.FN_OBTENER_SUELDO_EMP',v_descripcion);
+            RETURN 0;
+        WHEN OTHERS THEN 
+            pkg_operaciones.v_descripcion := sqlerrm;
+            INSERT INTO error_proceso_remun VALUES (seq_error.NEXTVAL,'ERROR PKG_OPERACIONES.FN_OBTENER_SUELDO_EMP',v_descripcion);
+            RETURN 0;
+     END fn_obtener_sueldo_emp;
+     
+    PROCEDURE  sp_truncar_tabla(nombre_tabla VARCHAR2) IS
+    BEGIN 
+        EXECUTE IMMEDIATE 'TRUNCATE TABLE ' || nombre_tabla;
+    END  sp_truncar_tabla;
+    
+    FUNCTION fn_obtener_annos(rut_empleado IN NUMBER) RETURN NUMBER IS
+        annos NUMBER;
+    BEGIN 
+        SELECT round(months_between(sysdate,fecing_emp)/12) INTO annos FROM empleado WHERE numrut_emp = rut_empleado;
+        RETURN annos;
+    EXCEPTION
+    WHEN no_data_found THEN
+        pkg_operaciones.v_descripcion := sqlerrm;
+        INSERT INTO error_proceso_remun VALUES (seq_error.NEXTVAL,'ERROR PKG_OPERACIONES.FN_OBTENER_SUELDO_EMP',v_descripcion);
+        RETURN 0;
+    WHEN OTHERS THEN 
+        pkg_operaciones.v_descripcion := sqlerrm;
+        INSERT INTO error_proceso_remun VALUES (seq_error.NEXTVAL,'ERROR PKG_OPERACIONES.FN_OBTENER_SUELDO_EMP',v_descripcion);
+        RETURN 0;
+    END fn_obtener_annos;
+    
+    FUNCTION fn_obtener_porc_bonificacion(annos IN NUMBER) RETURN NUMBER IS
+        v_porc_bonif NUMBER;
+    BEGIN
+        SELECT porc_bonif INTO v_porc_bonif FROM porc_bonif_annos_contrato WHERE annos BETWEEN annos_inferior AND  annos_superior;
+        RETURN v_porc_bonif;
+    EXCEPTION
+        WHEN no_data_found THEN
+            pkg_operaciones.v_descripcion := sqlerrm;
+            INSERT INTO error_proceso_remun VALUES (seq_error.NEXTVAL,'ERROR PKG_OPERACIONES.FN_OBTENER_SUELDO_EMP',v_descripcion);
+            RETURN 0;
+        WHEN OTHERS THEN 
+            pkg_operaciones.v_descripcion := sqlerrm;
+            INSERT INTO error_proceso_remun VALUES (seq_error.NEXTVAL,'ERROR PKG_OPERACIONES.FN_OBTENER_SUELDO_EMP',v_descripcion);
+            RETURN 0;       
+    END fn_obtener_porc_bonificacion;
+END pkg_operaciones;
+
+-- Función almacenada adicional que retorna el valor de la movilización del empleado
+CREATE OR REPLACE FUNCTION fn_valor_movilizacion (p_rut_emp IN NUMBER, p_valor_comision_ventas IN NUMBER, p_valor_asig_carga IN NUMBER) RETURN NUMBER IS
+    v_descripcion error_proceso_remun.descrip_error%TYPE;
+    v_sueldo_base NUMBER;
+    v_categoria  NUMBER;
+    v_comuna NUMBER;
+BEGIN 
+    SELECT E.sueldo_base_emp, C.id_categoria_emp, co.id_comuna INTO v_sueldo_base, v_categoria, v_comuna FROM empleado E INNER JOIN categoria_empleado C  ON  E.id_categoria_emp = C.id_categoria_emp INNER JOIN comuna co ON E.id_comuna = co.id_comuna  WHERE numrut_emp = p_rut_emp;
+    pkg_bonificacion.v_movilizacion := round((v_sueldo_base + p_valor_comision_ventas + p_valor_asig_carga)* 0.25);
+    IF v_categoria <> 3  THEN
+        -- SI NO SON VENDEDORES Y VIVEN EN LAS COMUNAS DE LA PINTANA, CERRO NAVIA O PEÑALOLÉN ADICIONAL DE 25000
+        IF v_comuna IN (107,105,91) THEN
+            pkg_bonificacion.v_movilizacion := pkg_bonificacion.v_movilizacion + 25000;
+         -- SI NO SON VENDEDORES Y VIVEN EN LAS COMUNAS DE MELIPILLA, MARIA PINTO,CURACAVI, TALAGANTE , ISLA DE MAIPO O PAINE SE LES PAGARÁ UN ADICIONAL DE 40000
+        ELSIF v_comuna IN (119,118,117,114,124,122) THEN
+            pkg_bonificacion.v_movilizacion := pkg_bonificacion.v_movilizacion + 40000;
+        END IF;
+    END IF;
+    RETURN pkg_bonificacion.v_movilizacion;
+EXCEPTION 
+    WHEN no_data_found THEN
+        v_descripcion := sqlerrm;
+        INSERT INTO error_proceso_remun VALUES (seq_error.NEXTVAL,'ERROR FN_VALOR_MOVILIZACION',v_descripcion);
+        RETURN 0;
+    WHEN OTHERS THEN 
+        v_descripcion := sqlerrm;
+        INSERT INTO error_proceso_remun VALUES (seq_error.NEXTVAL,'ERROR FN_VALOR_MOVILIZACION',v_descripcion);
+        RETURN 0;
+END;
+
+-- Verificar Comunas
+SELECT * FROM comuna WHERE id_comuna IN (119,118,117,114,124,122);
+
+
+-- Función Adicional que retorna el valor total de HABERES
+CREATE OR REPLACE FUNCTION fn_haberes(p_sueldo IN NUMBER, p_valor_asig_annos IN NUMBER, p_valor_cargas IN NUMBER, p_valor_movilizacion IN NUMBER, p_valor_ventas IN NUMBER) RETURN NUMBER IS
+    v_haberes NUMBER;
+    v_descripcion error_proceso_remun.descrip_error%TYPE;
+BEGIN 
+    v_haberes := p_sueldo + p_valor_asig_annos + p_valor_cargas + p_valor_movilizacion +p_valor_ventas;
+    RETURN v_haberes;
+EXCEPTION 
+    WHEN no_data_found THEN
+        v_descripcion := sqlerrm;
+        INSERT INTO error_proceso_remun VALUES (seq_error.NEXTVAL,'ERROR FN_HABERES',v_descripcion);
+        RETURN 0;
+    WHEN OTHERS THEN 
+        v_descripcion := sqlerrm;
+        INSERT INTO error_proceso_remun VALUES (seq_error.NEXTVAL,'ERROR FN_HABERES',v_descripcion);
+        RETURN 0;
+END fn_haberes;
+
+
+----------------------------------------------------
+
+
+----------------------------------------------------
+--          PACKAGE BONIFICACION 
+----------------------------------------------------
+
+CREATE OR REPLACE PACKAGE pkg_bonificacion IS
+    -- Variable pública para guardar la movilización
+    v_movilizacion NUMBER;
+    -- Función que calcula la bonificación
+    FUNCTION fn_calcular_bonificacion(rut_empleado IN empleado.numrut_emp%TYPE, v_movilizacion IN NUMBER) RETURN NUMBER;
+END pkg_bonificacion;
+
+
+CREATE OR REPLACE PACKAGE BODY pkg_bonificacion IS 
+     FUNCTION fn_calcular_bonificacion(rut_empleado IN empleado.numrut_emp%TYPE, v_movilizacion IN NUMBER) RETURN NUMBER IS
+        v_annos NUMBER;
+        v_porc_bonif NUMBER;
+        v_bonificacion NUMBER DEFAULT 0;
+        v_sueldo NUMBER;
+        v_descripcion  error_proceso_remun.descrip_error%TYPE;
+     BEGIN 
+        v_annos := pkg_operaciones.fn_obtener_annos(rut_empleado);
+        IF v_annos >= 2 THEN
+           EXECUTE IMMEDIATE 'SELECT sueldo_base_emp INTO :v_sueldo
+                                              FROM empleado WHERE numrut_emp = :rut_empleado'
+                                              INTO v_sueldo
+                                              USING rut_empleado;
+            v_porc_bonif := pkg_operaciones.fn_obtener_porc_bonificacion(v_annos);
+            v_bonificacion := round( v_sueldo + v_movilizacion) * v_porc_bonif ;
+        END IF;
+        RETURN v_bonificacion;
+     EXCEPTION
+        WHEN no_data_found THEN
+            v_descripcion := sqlerrm;
+            INSERT INTO error_proceso_remun VALUES (seq_error.NEXTVAL,'ERROR PKG_BONIFICACION.FN_CALCULAR_BONIFICACION',v_descripcion);
+            RETURN 0;
+        WHEN OTHERS THEN 
+            v_descripcion := sqlerrm;
+            INSERT INTO error_proceso_remun VALUES (seq_error.NEXTVAL,'ERROR PKG_BONIFICACION.FN_CALCULAR_BONIFICACION',v_descripcion);
+            RETURN 0;
+     END fn_calcular_bonificacion;
+END pkg_bonificacion;
+
+----------------------------------------------------
+-- Funciones ALMACENADAS REQUERIDAS (2)
+----------------------------------------------------
+
+-- Función almacenada que retorna las cargas familiares del empleado REQUERIDA
+CREATE OR REPLACE FUNCTION fn_asignacion_carga_familiar(p_rut_empleado IN NUMBER) RETURN NUMBER IS
+    v_descripcion  error_proceso_remun.descrip_error%TYPE;
+    v_cargas NUMBER;
+BEGIN 
+    -- Obtenemos la cantidad de cargas Familiares
+    -- ASIGNACIÓN POR CARGA FAMILIAR 4500
+    EXECUTE IMMEDIATE 'SELECT COUNT(C.numrut_carga) INTO :v_cargas
+                                        FROM empleado E
+                                        INNER JOIN carga_familiar C 
+                                        ON E.numrut_emp = C.numrut_emp 
+                                        WHERE E.numrut_emp = :p_rut_empleado'
+                                        INTO v_cargas
+                                        USING p_rut_empleado;
+    RETURN v_cargas;
+EXCEPTION
+    WHEN no_data_found THEN
+        v_descripcion := sqlerrm;
+        INSERT INTO error_proceso_remun VALUES (seq_error.NEXTVAL,'ERROR FN_ASIGNACION_CARGA_FAMILIAR',v_descripcion);
+        RETURN 0;
+    WHEN OTHERS THEN 
+        v_descripcion := sqlerrm;
+        INSERT INTO error_proceso_remun VALUES (seq_error.NEXTVAL,'ERROR FN_ASIGNACION_CARGA_FAMILIAR',v_descripcion);
+        RETURN 0;
+END fn_asignacion_carga_familiar;
+
+-- Función Almacenada que  retorna el valor de la comisión por venta del empleado REQUERIDA
+CREATE OR REPLACE FUNCTION  fn_comision_ventas (p_rut_emp IN NUMBER, p_fecha IN DATE ) RETURN NUMBER IS
+    v_descripcion error_proceso_remun.descrip_error%TYPE;
+    v_comision_ventas NUMBER;
+BEGIN 
+    EXECUTE IMMEDIATE 'SELECT NVL(SUM(C.valor_comision),0)  INTO :v_comision_ventas
+    FROM empleado E
+    INNER JOIN boleta b
+    ON E.numrut_emp = b.numrut_emp
+    INNER JOIN comision_venta C
+    ON b.nro_boleta = C.nro_boleta
+    WHERE E.numrut_emp = :p_rut_emp AND to_char(b.fecha_boleta,''MM/YYYY'') = TO_CHAR(:p_fecha,''MM/YYYY'')'
+    INTO v_comision_ventas
+    USING p_rut_emp,  p_fecha;
+    
+    RETURN v_comision_ventas;
+EXCEPTION 
+    WHEN no_data_found THEN
+        v_descripcion := sqlerrm;
+        INSERT INTO error_proceso_remun VALUES (seq_error.NEXTVAL,'ERROR FN_COMISION_VENTAS',v_descripcion);
+        RETURN 0;
+    WHEN OTHERS THEN 
+        v_descripcion := sqlerrm;
+        INSERT INTO error_proceso_remun VALUES (seq_error.NEXTVAL,'ERROR FN_COMISION_VENTAS',v_descripcion);
+        RETURN 0;
+END fn_comision_ventas;
+
+
+
+----------------------------------------------------
+-- PROCEDIMIENTO ALMACENADO PRINCIPAL
+----------------------------------------------------
+
+CREATE OR REPLACE PROCEDURE sp_principal(p_fecha IN DATE) IS 
+    --Registro para guardar datos en HABER_CALC_MES
+    reg_resumen haber_calc_mes%rowtype;
+    -- Declarar Cursor
+    CURSOR cur_resumen IS SELECT DISTINCT(numrut_emp)  FROM empleado ORDER BY numrut_emp ASC;
+    -- Variable
+    v_rut_emp NUMBER;
+BEGIN
+    pkg_operaciones.sp_truncar_tabla('HABER_CALC_MES');
+    COMMIT;
+    OPEN cur_resumen;
+    LOOP
+        FETCH cur_resumen INTO v_rut_emp;  
+        reg_resumen.numrut_emp := v_rut_emp;
+        reg_resumen.valor_com_ventas := fn_comision_ventas(v_rut_emp,p_fecha);
+        reg_resumen.valor_cargas_fam := fn_asignacion_carga_familiar(v_rut_emp) * 4500; -- 4500 por cada carga Familiar
+        reg_resumen.valor_movilizacion := fn_valor_movilizacion(v_rut_emp,reg_resumen.valor_com_ventas,reg_resumen.valor_cargas_fam);
+        reg_resumen.mes_proceso := to_char(p_fecha,'MM');
+        reg_resumen.anno_proceso :=  to_char(p_fecha,'YYYY'); 
+        reg_resumen.annos_trabajados :=pkg_operaciones.fn_obtener_annos(v_rut_emp);
+        reg_resumen.valor_sueldo_base := pkg_operaciones.fn_obtener_sueldo_emp(v_rut_emp);
+        reg_resumen.valor_asig_annos := pkg_bonificacion.fn_calcular_bonificacion(v_rut_emp,reg_resumen.valor_movilizacion);
+        reg_resumen.valor_colacion := pkg_operaciones.v_colacion;
+        reg_resumen.valor_tot_haberes := fn_haberes(reg_resumen.valor_sueldo_base ,reg_resumen.valor_asig_annos , reg_resumen.valor_cargas_fam, reg_resumen.valor_movilizacion, reg_resumen.valor_com_ventas );
+        EXIT WHEN cur_resumen%notfound;
+        INSERT INTO haber_calc_mes VALUES reg_resumen;
+        COMMIT;
+    END LOOP;
+    CLOSE cur_resumen;
+END sp_principal;
+
+----------------------------------------------------
+-- Ejecución del PROCEDIMIENTO PRINCIPAL 
+----------------------------------------------------
+
+CALL sp_principal ('08/06/2021');
+
+
+

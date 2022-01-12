@@ -1,0 +1,230 @@
+-- ACTUALIZAR UNA FOTO DE UNA TABLA
+
+
+-- ACTUALIZAR UNA FOTO
+
+DECLARE
+    v_blob blob;
+    v_bfile bfile;
+    v_nombre varchar2(100);
+BEGIN
+    SELECT foto into v_blob 
+    FROM waifus 
+    WHERE id = 1
+    FOR UPDATE OF FOTO;
+
+    -- ESTABLECEMOS
+    v_nombre := '2.png';
+    v_bfile := bfilename('FOTOS_WAIFUS', v_nombre);
+    
+    -- PROCESO DE ACTUALIZACIÓN
+    DBMS_LOB.OPEN(v_bfile, DBMS_LOB.LOB_READONLY);
+    DBMS_LOB.LOADFROMFILE(v_blob,v_bfile,DBMS_LOB.GETLENGTH(v_bfile));
+    DBMS_LOB.CLOSE(v_bfile);
+    
+    DBMS_OUTPUT.PUT_LINE('NICEEE');
+    
+EXCEPTION
+    WHEN OTHERS THEN 
+        DBMS_OUTPUT.PUT_LINE('ERROR');
+END;
+
+
+
+-- INSERTAR REGISTRO CON UNA FOTO INCLUIDA
+
+DECLARE 
+v_blob blob;
+v_bfile bfile;
+v_nombre varchar2(100);
+
+BEGIN
+	INSERT INTO tabla values (1,'uwu',empty_blob()) RETURNING foto into v_blob;
+		
+	v_foto := '1.png';
+	v_bfile := bfilename('FOTOS_WAIFUS',v_foto);
+	DBMS_LOB.OPEN(v_bfile,DBMS_LOB.LOB_READONLY);
+	DBMS_LOD.LOADFROMFILE(v_blob,v_bfile,DBMS_LOB.GETLENGTH(v_bfile));
+	DBMS_LOB.CLOSE(v_bfile);
+END;
+
+
+-- ACTUALIZAR FOTOS CON CURSOR IMPLICITO
+DECLARE
+    v_blob blob;
+    v_bfile bfile;
+    v_nombre varchar2(100);
+    
+    CURSOR cur_fotos IS
+    select id, foto from WAIFUS FOR UPDATE OF FOTO;
+BEGIN
+    FOR x IN cur_fotos 
+    LOOP
+        BEGIN 
+            -- ESTABLECER 
+            v_nombre := x.id || '.PNG';
+            v_bfile := bfilename('FOTOS_WAIFUS',v_nombre);
+            v_blob := x.foto;
+            
+            -- PROCESO DE ACTUALIZACION DE FOTOS
+            DBMS_LOB.OPEN(v_bfile,DBMS_LOB.LOB_READONLY);
+            DBMS_LOB.LOADFROMFILE(v_blob,v_bfile,DBMS_LOB.GETLENGTH(v_bfile));
+            DBMS_LOB.CLOSE(v_bfile);
+            
+            DBMS_OUTPUT.PUT_LINE('SE INSERTÓ CON ÉXITO');
+        EXCEPTION
+            WHEN OTHERS THEN
+                DBMS_OUTPUT.PUT_LINE('ERRROR');
+        END;
+    EnD LOOP;
+END;
+
+
+-- ACTUALIZAR FOTOS VERSIÓN 2 CON CURSOR EXPLICITO
+
+DECLARE
+    v_blob blob;
+    v_bfile bfile;
+    v_nombre varchar2(100);
+    v_id number(3);
+    
+    CURSOR cur_fotos IS
+        SELECT id FROM waifus;
+BEGIN
+    OPEN cur_fotos;
+        LOOP 
+            BEGIN
+                FETCH cur_fotos into v_id;
+                EXIT WHEN cur_fotos%notfound;
+                -- Capturar la foto 
+                select foto into v_blob FROM WAIFUS WHERE id = v_id FOR UPDATE OF FOTO;
+                
+                -- ESTABLECER 
+                v_nombre := v_id || '.PNG';
+                v_bfile := bfilename('FOTOS_WAIFUS',v_nombre);
+                
+                -- PROCESO DE ACTUALIZACION DE FOTOS
+                DBMS_LOB.OPEN(v_bfile,DBMS_LOB.LOB_READONLY);
+                DBMS_LOB.LOADFROMFILE(v_blob,v_bfile,DBMS_LOB.GETLENGTH(v_bfile));
+                DBMS_LOB.CLOSE(v_bfile);
+                
+                DBMS_OUTPUT.PUT_LINE('INSERTÓ CON ÉXITO');
+            EXCEPTION
+                WHEN OTHERS THEN 
+                    DBMS_OUTPUT.PUT_LINE('ERROR CON LA FOTO '|| v_nombre);
+            END;
+        END LOOP;
+    CLOSE cur_fotos;
+END;
+
+
+-- Creación de un objeto tipo tabla "TABLE"
+
+DECLARE
+    -- Definimos una variable de tipo tabla 
+    TYPE tipo_nombres is TABLE OF VARCHAR2(80) INDEX BY PLS_INTEGER;
+    -- Creamos una variable que guarde los datos y tome la estructura de tipo tabla
+    v_nombres tipo_nombres;
+BEGIN 
+    v_nombres(1) := 'Jorge';
+    v_nombres(2) := 'Camila';
+    v_nombres(5) := 'Juan';
+    
+    DBMS_OUTPUT.PUT_LINE('NOMBRES : ' || v_nombres(1) || v_nombres(2) || v_nombres(5));
+END;
+
+-- Creación de objeto tipo registro "RECORD"
+
+DECLARE
+    TYPE TIPO_REG IS RECORD(
+        nombre varchar2(30),
+        edad number(3)
+    );
+    
+    reg_empleado tipo_reg;
+BEGIN
+    reg_empleado.nombre := 'Jorge';
+    reg_empleado.edad := 21;
+    
+    DBMS_OUTPUT.PUT_LINE('NOMBRE ' ||reg_empleado.nombre || ' EDAD ' || reg_empleado.edad);
+END;
+
+-- Creación de objeto arreglo "VARRAY"
+DECLARE
+    -- Creamos un VARRAY 
+    TYPE tipo_varray_interes IS VARRAY(5) OF NUMBER(3,3);
+    -- Varible para guardar los intereses de la tabla en una lista
+    v_lista_interes tipo_varray_interes; 
+BEGIN
+    -- Inicializamos el Arreglo
+    v_lista_interes := tipo_varray_interes(0,0,0,0,0);
+END;
+
+-- CREAR UNA COPIA DE UNA TABLA
+CREATE TABLE anime AS SELECT * FROM waifus;
+
+-- PROPIEDADES DE SQL (sql%found (ENCUENTRA) -  sql%open -  sql%notfound (NO ENCUENTRA) -  sql%rowcount (FILAS AFECTADAS))
+-- SE PUEDEN USAR EN CUALQUIER SQL (INSERT - UPDATE - DELETE - SELECT)
+
+
+-- CURSOR EXPLICITO CON WHILE 
+DECLARE
+    CURSOR cur_emp 
+    IS (SELECT * from employees where department_id = 90);
+    reg_emp cur_emp%rowtype;
+BEGIN
+    open cur_Emp;
+    FETCH cur_emp INTO reg_emp;
+    while cur_emp%found
+    LOOP
+        FETCH cur_emp INTO REG_EMP;
+    END LOOP;
+    CLOSE CUR_EMP;
+END;
+
+-- CURSOR CON PARAMETROS
+DECLARE 
+    CURSOR cur_depto IS (SELECT * FROM departments);
+    CURSOR cur_emp (p_depto NUMBER) IS
+        (SELECT * FROM employees WHERE departments_id = p_depto);
+    REG_depto cur_depto%rowtype;
+    reg_emp cur_emp%rowtype;
+BEGIN
+    OPEN cur_depto;
+    LOOP
+        FETCH cur_depto INTO reg_depto;
+        EXIT WHEN cur_depto%notfound;
+        DBMS_OUTPUT.PUT_LINE('DEPARTAMENTO: ' || reg_depto.department_name);
+        DBMS_OUTPUT.PUT_LINE('--------------------------------------------------------------------------------'); 
+        
+        -- SEGUNDO CURSOR
+        OPEN cur_emp(reg_depto.department_id);
+            LOOP
+                FETCH cur_emp INTO reg_emp;
+                exit when cur_emp%notfound;
+                DBMS_OUTPUT.PUT_LINE('NOMBRE: ' || reg_emp.first_name);  
+            END LOOP;
+        CLOSE cur_emp;
+        DBMS_OUTPUT.PUT_LINE('--------------------------------------------------------------------------------'); 
+    END LOOP;
+    CLOSE cur_depto;
+END;
+
+-- CURSOR DE ACTUALIZACIÓN
+DECLARE 
+    CURSOR CUR_EMP IS SELECT * FROM EMPLEADOS FOR UPDATE;
+    REG_EMP CUR_EMP%ROWTYPE;
+BEGIN 
+    OPEN CUR_EMP;
+        LOOP
+            FETCH CUR_EMP INTO REG_EMP;
+            EXIT WHEN CUR_EMP%NOTFOUND;
+            -- PROCESO DE ACTUALIZACION
+            IF LENGTH(REG_EMP.FIRST_NAME) > 10 THEN
+                UPDATE EMPLEADOS SET SALARY = SALARY + 1000
+                WHERE CURRENT OF CUR_EMP;
+            END IF;
+        END LOOP;
+    CLOSE CUR_EMP;
+END; 
+

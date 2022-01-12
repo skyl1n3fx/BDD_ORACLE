@@ -1,0 +1,468 @@
+
+-----------------------------------------
+---------------PRUEBA 3------------------
+-- Nombre: JORGE QUINTUI
+-- Profesor : Carlos Valenzuela
+-- Nota: 6.3
+-----------------------------------------
+
+DROP USER prueba3 CASCADE;
+
+CREATE USER prueba3 IDENTIFIED BY prueba3;
+GRANT CONNECT,RESOURCE, dba TO prueba3;
+
+--Formato Día, Mes y Año
+ALTER SESSION SET nls_date_format = 'DD/MM/YYYY'
+
+--Activar para probar algunos subprogramas
+SET SERVEROUTPUT ON;
+
+
+------------------------------------------------------------------------------------------------------
+-- NOTA
+-- Profe abarcamos los puntos de la prueba en diferente orden
+-- por la sencilla razón de agilizar y hacer los procesos más óptimos
+-- yaque si no se toma en cuenta este orden no se podrán realizar de manera correcta ciertos procesos.
+
+-- Dicho esto espero no sea un problema, de igual manera le dejamos comentado cada punto.
+
+-------------------------------------------------------------------------------------------------------
+----------------------------------------------------------------------------------------------
+--3 y 4
+-- Creamos el package antes para capturar los posibles errores de cada subprograma
+----------------------------------------------------------------------------------------------
+
+--3 a)
+---------------------------------------------------------
+----CREAR ENCABEZADO DEL PACKAGE
+--Declaramos la variable y los subprogramas públicos
+----------------------------------------------------------
+
+CREATE OR REPLACE PACKAGE pkg_prestamo IS 
+
+v_mensaje VARCHAR2(200);
+PROCEDURE sp_errores(p_sentencia VARCHAR2,p_mensaje VARCHAR2);
+FUNCTION fn_dias_atraso(p_fecha_termino DATE, p_hora_termino VARCHAR2, p_fecha_entrega DATE, p_hora_entrega VARCHAR2) RETURN NUMBER;
+PROCEDURE sp_alumno_carrera(p_alumnoid IN NUMBER, p_alumno OUT VARCHAR2,p_carrera OUT VARCHAR2);
+FUNCTION fn_en_plazo (p_carrera VARCHAR2) RETURN NUMBER;
+FUNCTION fn_fuera_plazo (p_carrera VARCHAR2)RETURN NUMBER;
+
+END pkg_prestamo;
+
+----CREAR CUERPO DEL PACKAGE
+--Desarrollamos los subprogramas públicos que declaramos en el encabezado
+--------------------------------------------------------------------------
+
+CREATE OR REPLACE PACKAGE BODY pkg_prestamo IS
+
+PROCEDURE sp_errores (p_sentencia VARCHAR2,p_mensaje VARCHAR2) IS
+    v_error VARCHAR2(200);   
+BEGIN
+    v_error:='INSERT INTO ERROR_PROCESO_PRESTAMO VALUES(SEQ_ERROR_PROCESO_PRESTAMO.NEXTVAL, :sentencia_error, :mensaje_error)';
+   EXECUTE IMMEDIATE v_error USING  p_sentencia, p_mensaje;
+END;
+
+FUNCTION fn_dias_atraso(p_fecha_termino DATE, p_hora_termino VARCHAR2, p_fecha_entrega DATE, p_hora_entrega VARCHAR2) RETURN NUMBER IS 
+    v_dias  NUMBER := 0;
+BEGIN
+
+    v_dias:=TO_DATE(p_fecha_entrega||' '||p_hora_entrega,'DD-MM-YYYY HH24:MI')- TO_DATE(p_fecha_termino||' '||p_hora_termino,'DD-MM-YYYY HH24:MI');
+    v_dias:=TRUNC(v_dias);
+    IF v_dias > 0 THEN
+        RETURN v_dias;
+    ELSE
+        RETURN 0;
+    END IF;
+EXCEPTION
+     WHEN OTHERS THEN
+         pkg_prestamo.v_mensaje:=sqlerrm;
+         sp_errores('ERROR FN_DIAS_ATRASO AL CALCULAR DIAS DEBIDO A UN VALOR NULO', pkg_prestamo.v_mensaje);
+        RETURN 0;        
+END fn_dias_atraso;
+
+PROCEDURE sp_alumno_carrera(p_alumnoid IN NUMBER, p_alumno OUT VARCHAR2,p_carrera OUT VARCHAR2)IS
+BEGIN 
+    SELECT nombre||' '||apaterno||' '||amaterno,
+    descripcion INTO p_alumno,p_carrera
+    FROM alumno A
+    INNER JOIN carrera C
+    ON A.carreraid=C.carreraid
+    WHERE alumnoid=p_alumnoid;
+EXCEPTION
+     WHEN no_data_found THEN
+        pkg_prestamo.v_mensaje:=sqlerrm;
+        sp_errores('ERROR SP_ALUMNO_CARRERA AL OBTENER EL NOMBRE Y LA CARRERA DEL ALUMNO CON ID : '||p_alumnoid, pkg_prestamo.v_mensaje);    
+END sp_alumno_carrera;
+
+FUNCTION fn_en_plazo (p_carrera VARCHAR2) RETURN NUMBER IS
+v_en_plazo NUMBER;
+BEGIN
+  SELECT COUNT(dias_atraso_devolucion) INTO v_en_plazo
+        FROM detalle_prestamo_mensual
+        WHERE dias_atraso_devolucion=0 AND carrera=p_carrera
+        GROUP BY carrera;
+    RETURN v_en_plazo;
+EXCEPTION
+    WHEN no_data_found THEN
+        pkg_prestamo.v_mensaje:=sqlerrm;
+        sp_errores('ERROR FN_EN_PLAZO CARRERA: '||p_carrera, pkg_prestamo.v_mensaje); 
+        RETURN 0;
+END fn_en_plazo;
+
+FUNCTION fn_fuera_plazo (p_carrera VARCHAR2) RETURN NUMBER IS
+v_fuera_plazo NUMBER;
+BEGIN
+  SELECT COUNT(dias_atraso_devolucion) INTO v_fuera_plazo
+        FROM detalle_prestamo_mensual
+        WHERE dias_atraso_devolucion>0 AND carrera=p_carrera
+        GROUP BY carrera;
+    RETURN v_fuera_plazo;
+EXCEPTION
+    WHEN no_data_found THEN
+        pkg_prestamo.v_mensaje:=sqlerrm;
+        sp_errores('ERROR FN_FUERA_PLAZO CARRERA: '||p_carrera, pkg_prestamo.v_mensaje); 
+        RETURN 0;
+END fn_fuera_plazo;
+
+END pkg_prestamo;
+
+----------------------------------------------------------------------------
+--PROBAMOS LA FUNCIÓN PÚBLICA QUE CALCULA LA CANTIDAD DE DIAS ENTRE 2 FECHAS
+----------------------------------------------------------------------------
+
+DECLARE
+    v_dias NUMBER;
+    v_fecha_inicial DATE;
+    v_hora_inicial VARCHAR2(10);
+    v_fecha_final DATE;
+    v_hora_final VARCHAR2(10);
+BEGIN
+    v_fecha_inicial:='10/9/2020';
+    v_hora_inicial:='00:00';
+    v_fecha_final:='13/9/2020';
+    v_hora_final:='00:00';
+    v_dias:=pkg_prestamo.fn_dias_atraso(v_fecha_inicial,v_hora_inicial,v_fecha_final,v_hora_final) ;
+    dbms_output.put_line('Cantidad de dias de atraso : '||v_dias);
+END;
+
+--------------------------------------------------------------------------------------
+--PROBAMOS EL PROCEDIMIENTO PÚBLICO QUE NOS ENTREGA EL NOMBRE Y LA CARRERA DEL ALUMNO
+--------------------------------------------------------------------------------------
+
+DECLARE
+    v_alumno VARCHAR2(80);
+    v_carrera VARCHAR2(50);
+BEGIN 
+    pkg_prestamo.sp_alumno_carrera(100,v_alumno,v_carrera);
+    dbms_output.put_line('Alumno: '||' '||v_alumno||' - Carrera: '||' '||v_carrera);
+END;
+
+-------------------------------------------------------------------------------------------------
+--CREAR FUNCIÓN ALMACENADA QUE CALCULE LA MULTA SEGÚN LOS DIAS DE ATRASO DE DEVOLUCIÓN DEL LIBRO
+-------------------------------------------------------------------------------------------------
+--3 b)
+
+CREATE OR REPLACE FUNCTION fn_calcular_multa (p_libroid NUMBER, p_cant_dias NUMBER) RETURN NUMBER IS
+    v_porc_multa NUMBER;
+    v_multa NUMBER;                                                                                                                                                 
+    v_precio NUMBER;
+BEGIN 
+    IF p_cant_dias > 0 THEN
+        SELECT porcentaje_multa  INTO v_porc_multa
+        FROM valor_multa_prestamo
+        WHERE p_cant_dias BETWEEN cant_dias_ini AND cant_dias_ter;
+        
+        SELECT precio INTO v_precio
+        FROM libro
+        WHERE libroid=p_libroid;
+        v_multa:=round(v_precio*(v_porc_multa/100),0);
+    RETURN v_multa;
+    ELSE
+        RETURN 0;
+    END IF;
+EXCEPTION 
+    WHEN no_data_found THEN
+        pkg_prestamo.v_mensaje:=sqlerrm;
+        pkg_prestamo.sp_errores('ERROR FN_CALCULAR_MULTA AL OBTENER LA MULTA DEL LIBRO CON ID : '||p_libroid, pkg_prestamo.v_mensaje);
+        RETURN 0;
+END fn_calcular_multa;
+
+---------------------------------------------------------------------------------------------------------
+--PROBAMOS LA FUNCIÓN ALMACENDA QUE RETORNA LA MULTA SEGÚN LOS DIAS DE ATRASO EN LA DEVOLUCIÓN DEL LIBRO
+---------------------------------------------------------------------------------------------------------
+DECLARE
+    v_porcentaje NUMBER;
+    v_id NUMBER;
+BEGIN
+    v_porcentaje:=fn_calcular_multa( 63326,1);
+    dbms_output.put_line('La multa corresponde a : $'||v_porcentaje||' pesos');
+END;
+
+-----------------------------------------------------------------------------------
+--CREAR FUNCIÓN ALMACENADA QUE RETORNE REBAJA DE LA MULTA POR CONVENIO DE CARRERAS
+-----------------------------------------------------------------------------------
+--3. c)
+
+CREATE OR REPLACE FUNCTION fn_convenio (p_carreraid NUMBER, p_multa NUMBER) RETURN NUMBER IS
+    v_multa NUMBER;
+    v_porcentaje NUMBER;
+    v_descuento NUMBER;
+BEGIN
+v_porcentaje:=0;
+v_multa:=p_multa;
+IF p_carreraid IN (180,320,160,220) THEN
+    SELECT porc_rebaja_multa INTO v_porcentaje
+    FROM rebaja_multa
+    WHERE carreraid=p_carreraid;
+    v_descuento:=round((v_porcentaje/100)*p_multa,0);
+    v_multa:=p_multa-v_descuento;
+        RETURN v_multa;
+    ELSE
+        RETURN v_multa;
+END IF;
+EXCEPTION
+     WHEN no_data_found THEN
+        pkg_prestamo.v_mensaje:=sqlerrm;
+        pkg_prestamo.sp_errores('ERROR FN_CONVENIO AL OBTENER LA REBAJA DE LA CARRERA CON ID : '||p_carreraid, pkg_prestamo.v_mensaje);
+        RETURN 0;
+END fn_convenio;
+---------------------------------------------------------------------------------
+--PROBAMOS LA FUNCIÓN ALMACENADA QUE RETORNA UNA REBAJA DE LA MULTA POR CONVENIO 
+---------------------------------------------------------------------------------
+DECLARE
+    v_id NUMBER;
+    v_multa NUMBER;
+    v_rebaja NUMBER;
+BEGIN
+    v_id:=180;
+    v_multa:=2000;
+    v_rebaja:=fn_convenio(v_id,v_multa);
+    dbms_output.put_line('Multa = $'||v_multa||' pesos');
+    dbms_output.put_line('ID carrera Nro : '||v_id);
+    dbms_output.put_line('Multa con rebaja = $'||v_rebaja|| ' pesos');
+END;
+
+--3. e y f
+-- Todos los cálculos fueron redondeados con 0 décimales y en caso de error retorna 0
+
+----------------------------------------------------------------------------
+--CREAR PROCEDIMIENTO ALMACENADO QUE POBLE LA TABLA DETALLE_PRESTAMO_MENSUAL
+----------------------------------------------------------------------------
+--3. d
+
+CREATE OR REPLACE PROCEDURE sp_prestamo IS
+
+    v_dias NUMBER;
+    v_multa NUMBER;
+    v_rebaja NUMBER;
+    CURSOR cur_prestamo IS
+    SELECT prestamoid, nombre_libro, ejemplarid,
+    nombre||' '||apaterno||' '||amaterno AS "alumno",
+    descripcion, fecha_inicio,fecha_termino,fecha_entrega,
+    hora_termino,hora_entrega,L.libroid,C.carreraid
+    FROM prestamo P
+        INNER JOIN libro L
+        ON P.libroid=L.libroid
+        INNER JOIN alumno A
+        ON P.alumnoid=A.alumnoid
+        INNER JOIN carrera C
+        ON A.carreraid=C.carreraid;
+BEGIN
+    FOR X IN cur_prestamo LOOP
+        BEGIN
+            --Cálculos
+            --Cant. dias de atraso
+            v_dias:=pkg_prestamo.fn_dias_atraso(X.fecha_termino,X.hora_termino,X.fecha_entrega,X.hora_entrega);
+            --Multa
+            v_multa:=fn_calcular_multa(X.libroid,v_dias);
+            --Rebaja multa
+            v_rebaja:=fn_convenio(X.carreraid,v_multa);
+            --Objetivo
+            INSERT INTO detalle_prestamo_mensual VALUES (seq_det_prestamo_mensual.NEXTVAL,
+                                                         to_char(sysdate,'MM/YYYY'),
+                                                         X.prestamoid,
+                                                         X.nombre_libro,
+                                                         X.ejemplarid,
+                                                         X."alumno",
+                                                         X.descripcion,
+                                                         X.fecha_inicio,
+                                                         X.fecha_termino,
+                                                         X.fecha_entrega,
+                                                         v_dias,
+                                                         v_multa);
+        EXCEPTION 
+            WHEN OTHERS THEN
+        pkg_prestamo.v_mensaje:=sqlerrm;
+        pkg_prestamo.sp_errores('ERROR SP_PRESTAMO CON EL PRESTAMO CON ID: '||X.prestamoid, pkg_prestamo.v_mensaje);
+        END;
+    END LOOP;
+    
+END sp_prestamo;
+
+--------------------------------
+EXECUTE sp_prestamo;
+
+
+--1. a y b
+-------------------------------------------------------------------------------------------------
+--CREAR TRIGGER QUE SE DISPARE CUANDO SE INSERTEN O SE ACTUALICEN DATOS EN LA TABLA PRESTAMO
+-------------------------------------------------------------------------------------------------
+CREATE OR REPLACE TRIGGER tgr_prestamo
+AFTER INSERT OR UPDATE ON prestamo
+FOR EACH ROW
+
+DECLARE
+    v_libro VARCHAR2(50);
+    v_alumno VARCHAR2(100);
+    v_carrera VARCHAR2(100);
+    v_carreraid NUMBER;
+    v_dias NUMBER;
+    v_precio NUMBER;
+    v_multa NUMBER;
+               
+BEGIN
+    --Nombre del libro
+    SELECT nombre_libro INTO v_libro
+    FROM libro WHERE libroid=:NEW.libroid;
+    
+    --Nombre del Alumno
+    SELECT nombre||' '||apaterno||' '||amaterno INTO v_alumno 
+    FROM alumno
+    WHERE alumnoid=:NEW.alumnoid;
+    
+    --Carrera
+    SELECT descripcion, C.carreraid INTO v_carrera, v_carreraid
+    FROM alumno A
+        INNER JOIN carrera C
+        ON A.carreraid=C.carreraid
+    WHERE alumnoid=:NEW.alumnoid;
+    
+    --Dias de atraso
+    v_dias:= pkg_prestamo.fn_dias_atraso(:NEW.fecha_termino,:NEW.hora_termino,:NEW.fecha_entrega,:NEW.hora_entrega);
+    
+    --Valor de la multa 
+    v_multa:=fn_calcular_multa(:NEW.libroid,v_dias);
+    
+    --Rebaja de la multa por convenio 
+    v_multa:=fn_convenio(v_carreraid,v_multa);
+    IF inserting THEN
+        INSERT INTO detalle_prestamo_mensual VALUES (seq_det_prestamo_mensual.NEXTVAL,
+                                                     to_char(sysdate,'MM/YYYY'),
+                                                     :NEW.prestamoid,
+                                                     v_libro,
+                                                     :NEW.ejemplarid,
+                                                     v_alumno,
+                                                     v_carrera,
+                                                     :NEW.fecha_inicio,
+                                                     :NEW.fecha_termino,
+                                                     :NEW.fecha_entrega,
+                                                     v_dias,
+                                                     v_multa);
+    ELSIF updating THEN
+        UPDATE detalle_prestamo_mensual SET fecha_devolucion_libro = :NEW.fecha_entrega, dias_atraso_devolucion = v_dias, valor_multa = v_multa
+        WHERE prestamoid = :NEW.prestamoid;
+        
+    END IF;
+    
+EXCEPTION
+    WHEN OTHERS THEN
+        pkg_prestamo.v_mensaje:=sqlerrm;
+        pkg_prestamo.sp_errores('ERROR TGR_PRESTAMO CON EL PRESTAMO CON ID: '||:NEW.prestamoid, pkg_prestamo.v_mensaje);
+        
+END tgr_prestamo;
+
+--1. c
+-------------------------------------------------
+--PROBAMOS EL TRIGGER MEDIANTE UN BLOQUE ANÓNIMO
+--------------------------------------------------
+BEGIN
+    --Insertar un nuevo prestamo
+    INSERT INTO prestamo VALUES (1,'01/01/2020',
+    '15:00','10/01/2020','15:00',NULL,NULL,63326,'E002',170,170);
+    
+    --Actualizar el prestamo ya insertado
+    UPDATE prestamo SET fecha_entrega = '11/01/2020', hora_entrega = '15:00'
+    WHERE prestamoid=1;
+END;
+
+--rollback;
+
+----------------------------------------------------------------------------------------------
+--INSERTAR DATOS EN LA TABLA RESUMEN_PRESTAMO_MENSUAL MEDIANTE UN PROCEDIMIENTO ALMACENADO
+----------------------------------------------------------------------------------------------
+
+CREATE OR REPLACE PROCEDURE sp_resumen_prestamo IS
+
+    CURSOR cur_resumen IS
+        SELECT DISTINCT(descripcion)
+                    FROM alumno A
+                     INNER JOIN carrera C
+                     ON A.carreraid=C.carreraid;
+                     
+    v_carrera VARCHAR2(50);
+    v_total_alumnos_carrera NUMBER;
+    v_total_alumnos_soli_libro NUMBER;
+    v_total_en_plazo NUMBER;
+    v_total_fuera_plazo NUMBER;
+    v_total_multa NUMBER;
+    v_alumno VARCHAR2(80);
+BEGIN
+    FOR X IN cur_resumen LOOP
+        BEGIN
+        --Cálculos
+        --Recorrer las carreras
+        v_carrera:=X.descripcion;
+        
+        --Total de alumnos por carrera
+        SELECT COUNT(alumnoid) INTO v_total_alumnos_carrera
+        FROM alumno A
+            INNER JOIN carrera C
+            ON A.carreraid=C.carreraid 
+        WHERE descripcion=v_carrera
+        GROUP BY C.descripcion;
+        
+        --Total alumnos que solicitó libros
+        SELECT COUNT(prestamoid) INTO v_total_alumnos_soli_libro
+        FROM prestamo P
+        INNER JOIN alumno A
+        ON P.alumnoid=A.alumnoid
+        INNER JOIN carrera C
+        ON A.carreraid=C.carreraid
+        WHERE C.descripcion=v_carrera
+        GROUP BY C.descripcion;
+        
+        --Total de libros devueltos en el plazo correspondiente
+        v_total_en_plazo:=pkg_prestamo.fn_en_plazo(v_carrera);
+        
+        --Total de libros devueltos fuera del plazo correspondiente
+        v_total_fuera_plazo:=pkg_prestamo.fn_fuera_plazo(v_carrera);
+        
+        --Valor total de la multa por carrera
+        SELECT SUM(valor_multa) INTO v_total_multa
+        FROM detalle_prestamo_mensual
+        WHERE carrera=v_carrera
+        GROUP BY carrera;
+        
+        --Objetivo insertar datos en la tabla resumen prestamo mensual
+        INSERT INTO resumen_prestamo_mensual VALUES (seq_resumen_prestamo_mensual.NEXTVAL,
+                                                     to_char(sysdate,'DD/YYYY'),
+                                                     v_carrera,
+                                                     v_total_alumnos_carrera,
+                                                     v_total_alumnos_soli_libro,
+                                                     v_total_en_plazo,
+                                                     v_total_fuera_plazo,
+                                                     v_total_multa);
+        EXCEPTION 
+            WHEN OTHERS THEN
+                pkg_prestamo.v_mensaje:=sqlerrm;
+                pkg_prestamo.sp_errores('ERROR SP_RESUMEN_PRESTAMO - CARRERA: '||v_carrera, pkg_prestamo.v_mensaje);
+        END;
+    END LOOP;
+END sp_resumen_prestamo;
+
+-----------------------------------------
+EXECUTE sp_resumen_prestamo;
+
+-- 3 g)
+-- Se capturaron todos los posibles errores en el procedimiento público sp_errores.
+--rollback;

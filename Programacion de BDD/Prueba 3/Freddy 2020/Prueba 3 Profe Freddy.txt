@@ -1,0 +1,310 @@
+------------------------------
+----     PRUEBA 3         ----
+------------------------------
+-- Nombre : Jorge Quintui
+-- Profesor : Freddy Campos
+-- Nota : 6.5
+-- Año : 2020
+------------------------------
+
+---1
+--TICKET - VENTA - PELICULA
+CREATE OR REPLACE PACKAGE pkg_venta IS 
+
+PROCEDURE sp_errores(p_codigo VARCHAR2,p_mensaje VARCHAR2);
+
+END pkg_venta;
+
+CREATE OR REPLACE PACKAGE BODY pkg_venta IS
+
+PROCEDURE sp_errores (p_codigo VARCHAR2,p_mensaje VARCHAR2) IS 
+BEGIN
+ INSERT INTO errores VALUES (sq_error.NEXTVAL,p_codigo,p_mensaje,sysdate);
+END sp_errores;
+
+END pkg_venta;
+
+CREATE OR REPLACE FUNCTION fn_descuento_entrada (p_codigo NUMBER ,p_precio NUMBER) RETURN NUMBER IS
+    v_precio NUMBER;
+    v_porcentaje NUMBER;
+    v_descuento NUMBER;
+BEGIN 
+    v_precio:=p_precio;
+    SELECT porcentaje INTO v_porcentaje
+    FROM descuentoentradas
+    WHERE v_precio BETWEEN valorentrada_min AND valorentrada_max;
+    --Cálculos
+    v_descuento:=v_precio*v_porcentaje;
+    v_descuento:=round(v_descuento,0);
+    RETURN v_descuento;
+EXCEPTION
+    WHEN OTHERS THEN
+        pkg_venta.sp_errores(p_codigo,'fn_descuento_entrada error calcular descuento');
+        RETURN 0;
+END fn_descuento_entrada;
+
+CREATE OR REPLACE FUNCTION fn_calcular_precio_final(p_codigo NUMBER, p_precio NUMBER, p_descuento NUMBER) RETURN NUMBER IS
+    v_precio NUMBER;
+BEGIN
+    --cálculo
+    v_precio:=p_precio-p_descuento;
+    RETURN v_precio;
+EXCEPTION
+    WHEN OTHERS THEN
+        pkg_venta.sp_errores(p_codigo,'fn_calcular_precio_final error calcular precio final');
+        RETURN 0;
+END fn_calcular_precio_final;
+
+SET SERVEROUTPUT ON;
+DECLARE
+X NUMBER;
+C NUMBER;
+y NUMBER;
+G NUMBER;
+BEGIN
+X:=1;
+C:=2000;
+G := 20;
+y:=fn_calcular_precio_final(X,C,G);
+dbms_output.put_line('presio '||y);
+END;
+
+CREATE OR REPLACE TRIGGER trg_venta
+AFTER INSERT OR DELETE ON detalle
+FOR EACH ROW
+DECLARE
+    v_descuento_edad NUMBER;
+    v_descuento NUMBER;
+    v_precio NUMBER;
+    v_precio_final NUMBER;
+    v_precio_edad NUMBER;
+    v_total_desc NUMBER;
+BEGIN
+            IF inserting THEN
+             SELECT precio INTO v_precio
+                FROM peliculas P
+                INNER JOIN venta V
+                ON P.idpelicula=V.idpelicula
+                WHERE V.idventa=:NEW.idventa;
+                
+            --Cálculos
+            --Ticket adulto mantiene precio, Ticket menor de edad descuento del 50%- retorna precio calculado con el descuento
+            IF :NEW.adulto = 'S' THEN
+                v_descuento_edad:=0;
+                v_precio_edad:=v_precio;
+            ELSIF :NEW.adulto = 'N' THEN
+                v_descuento_edad:=v_precio/2;
+                v_precio_edad:=v_precio/2;
+            END IF;
+            --Descuento según el precio de la entrada por la tabla descuentoentradas - retorna solo el descuento
+            v_descuento:=fn_descuento_entrada(:NEW.idventa,v_precio_edad);
+            --descuento total
+            v_total_desc:=v_descuento+v_descuento_edad;
+            --Precio final del ticket - retorna el calculo final de la rebaja según la edad y el valor del ticket
+            v_precio_final:=fn_calcular_precio_final(:NEW.idventa,v_precio_edad,v_descuento);
+            
+            UPDATE venta SET subtotal = subtotal+v_precio, descuento = descuento+v_total_desc, total = total+v_precio_final
+            WHERE idventa = :NEW.idventa;                     
+                
+            ELSIF deleting THEN 
+                SELECT precio INTO v_precio
+                FROM peliculas P
+                    INNER JOIN venta V
+                    ON P.idpelicula=V.idpelicula
+                WHERE V.idventa=:OLD.idventa;
+                --Cálculos
+                --Ticket adulto mantiene precio, Ticket menor de edad descuento del 50%- retorna precio calculado con el descuento
+                IF :OLD.adulto = 'S' THEN
+                    v_descuento_edad:=0;
+                    v_precio_edad:=v_precio;
+                ELSIF :OLD.adulto = 'N' THEN
+                    v_descuento_edad:=v_precio/2;
+                    v_precio_edad:=v_precio/2;
+                END IF;
+                --Descuento según el precio de la entrada por la tabla descuentoentradas - retorna solo el descuento
+                v_descuento:=fn_descuento_entrada(:OLD.idventa,v_precio_edad);
+                --descuento total
+                v_total_desc:=v_descuento+v_descuento_edad;
+                --Precio final del ticket - retorna el calculo final de la rebaja según la edad y el valor del ticket
+                v_precio_final:=fn_calcular_precio_final(:OLD.idventa,v_precio_edad,v_descuento);
+                    UPDATE venta SET subtotal = subtotal-v_precio, descuento = descuento-v_total_desc, total = total-v_precio_final
+                    WHERE idventa = :OLD.idventa;     
+            END IF;
+END trg_venta;
+
+
+
+DROP TRIGGER trg_venta;
+-- TRG
+BEGIN
+INSERT INTO venta VALUES (20,0,0,0,'10/10/2016',1,4);
+
+INSERT INTO ticket VALUES (44,40,'D',0,4,6);
+INSERT INTO ticket VALUES (45,40,'D',0,4,6);
+INSERT INTO ticket VALUES (46,40,'D',0,4,6);
+
+
+INSERT INTO detalle VALUES (44,20,'N');
+INSERT INTO detalle VALUES (45,20,'S');
+INSERT INTO detalle VALUES (46,20,'S');
+
+DELETE FROM detalle WHERE idticket=44;
+END;
+
+-- poblar tabla ventas
+
+CREATE OR REPLACE PROCEDURE sp_ventas IS
+    CURSOR cur_ventas IS
+    SELECT V.idventa,precio,adulto
+    FROM peliculas P
+    INNER JOIN venta V
+    ON P.idpelicula=V.idpelicula
+    INNER JOIN detalle D
+    ON V.idventa=D.idventa;
+    
+    v_descuento_edad NUMBER;
+    v_precio_edad NUMBER;
+    v_descuento NUMBER;
+    v_total_desc NUMBER;
+    v_precio_final NUMBER;
+BEGIN
+    FOR X IN cur_ventas LOOP
+        BEGIN
+                --Cálculos
+                --Ticket adulto mantiene precio, Ticket menor de edad descuento del 50%- retorna precio calculado con el descuento
+                IF X.adulto = 'S' THEN
+                    v_descuento_edad:=0;
+                    v_precio_edad:=X.precio;
+                ELSIF X.adulto = 'N' THEN
+                    v_descuento_edad:=X.precio/2;
+                    v_precio_edad:=X.precio/2;
+                END IF;
+                --Descuento según el precio de la entrada por la tabla descuentoentradas - retorna solo el descuento
+                v_descuento:=fn_descuento_entrada(X.idventa,v_precio_edad);
+                --descuento total
+                v_total_desc:=v_descuento+v_descuento_edad;
+                --Precio final del ticket - retorna el calculo final de la rebaja según la edad y el valor del ticket
+                v_precio_final:=fn_calcular_precio_final(X.idventa,v_precio_edad,v_descuento);
+            --objetivo actualizar datos de la tabla venta
+            UPDATE venta SET subtotal = subtotal+X.precio, descuento = descuento+v_total_desc, total = total+v_precio_final
+            WHERE idventa=X.idventa;
+        END;
+    END LOOP;
+END sp_ventas;
+
+EXECUTE sp_ventas;
+
+--crear secuencia
+CREATE SEQUENCE sq_sp_resumen;
+--Poblar resumen cine
+CREATE OR REPLACE PROCEDURE sp_resumen_cine IS
+    CURSOR cur_resumen IS
+    SELECT nombre, fecha,titulo,idioma,COUNT(T.idticket) AS "entradas", SUM(V.total) AS "recaudacion"
+    FROM peliculas P
+    INNER JOIN venta V
+    ON P.idpelicula=V.idpelicula
+    INNER JOIN detalle D
+    ON V.idventa=D.idventa
+    INNER JOIN ticket T
+    ON D.idticket=T.idticket
+    INNER JOIN cine C
+    ON T.cine_idcine=C.idcine
+    WHERE to_char(fecha,'YYYY')=2016
+    GROUP BY nombre,fecha,titulo,idioma
+    ORDER BY "recaudacion" DESC, "entradas" DESC;
+BEGIN 
+    FOR X IN cur_resumen LOOP
+        BEGIN 
+            --Objetivo insertar en resumen
+            INSERT INTO resumen_cine VALUES(sq_sp_resumen.NEXTVAL,
+                                            X.fecha,
+                                            X.nombre,
+                                            X.titulo,
+                                            X.idioma,
+                                            X."entradas",
+                                            X."recaudacion");
+        END;
+    END LOOP;
+END sp_resumen_cine;
+-------------------------------
+EXECUTE sp_resumen_cine;
+
+
+CREATE OR REPLACE FUNCTION fn_cant_adultos (p_codigo NUMBER,p_id NUMBER) RETURN NUMBER IS
+v_cant NUMBER;
+BEGIN
+    SELECT COUNT(adulto) INTO v_cant
+    FROM detalle
+    WHERE adulto='S' AND idventa=p_id;
+RETURN v_cant;
+EXCEPTION 
+     WHEN OTHERS THEN
+        pkg_venta.sp_errores(p_codigo,'fn_cant_adultos error al calcular las entradas de adultos');
+        RETURN 0;
+
+END fn_cant_adultos;
+
+CREATE OR REPLACE FUNCTION fn_cant_ninos (p_codigo NUMBER,p_id NUMBER) RETURN NUMBER IS
+v_cant NUMBER;
+BEGIN
+    SELECT COUNT(adulto) INTO v_cant
+    FROM detalle
+    WHERE adulto='N' AND idventa=p_id;
+RETURN v_cant;
+EXCEPTION 
+     WHEN OTHERS THEN
+        pkg_venta.sp_errores(p_codigo,'fn_cant_ninos error al calcular las entradas de niños');
+        RETURN 0;
+
+END fn_cant_ninos;
+
+DECLARE
+X NUMBER;
+v_id NUMBER;
+cod NUMBER;
+BEGIN
+v_id :=7;
+cod:=1;
+X:=fn_cant_adultos(cod,v_id);
+dbms_output.put_line(' go '||X);
+END;
+
+CREATE SEQUENCE sq_resumen_pelicula;
+
+-----------------------------------
+
+CREATE OR REPLACE PROCEDURE sp_resumen_pelicula IS 
+
+    CURSOR cur_resumen_peli IS
+    SELECT V.idventa,titulo, idioma,descripcion, SUM(total) AS "recaudacion"
+    FROM peliculas P
+    INNER JOIN venta V
+    ON P.idpelicula=V.idpelicula
+    INNER JOIN categoria C
+    ON P.idcategoria=C.idcategoria
+    GROUP BY V.idventa,titulo,idioma,descripcion
+    ORDER BY idventa ASC;
+    
+    v_adulto NUMBER;
+    v_nino NUMBER;
+BEGIN
+    FOR X IN cur_resumen_peli LOOP
+        BEGIN
+            --Cálculos
+            v_adulto:=fn_cant_adultos(X.idventa,X.idventa);
+            v_nino:=fn_cant_ninos(X.idventa,X.idventa);
+            --Objetivo
+            INSERT INTO resumen_peliculas VALUES (sq_resumen_pelicula.NEXTVAL,
+                                                  X.titulo,
+                                                  X.idioma,
+                                                  X.descripcion,
+                                                  v_adulto,
+                                                  v_nino,
+                                                  X."recaudacion");
+            
+        END;
+    END LOOP;
+END sp_resumen_pelicula;
+
+--------------------
+EXECUTE sp_resumen_pelicula;

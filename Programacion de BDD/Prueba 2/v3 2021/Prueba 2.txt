@@ -1,0 +1,256 @@
+
+--------------------------------------------------------------------------------
+-------------------------------PRUEBA 2-----------------------------------------
+--------------------------------------------------------------------------------
+-- Profesor : Juilliet
+-- Jorge Quintui :D
+-- Nota : 6.4
+
+-- Actualizamos el campo interes con valores null
+UPDATE tramo_cuota SET interes = NULL;
+
+-- Alteramos el campo interes para que tenga una precisión de 3
+ALTER TABLE tramo_cuota MODIFY interes NUMBER(3,3);
+
+-- Insertamos los valores correctos
+UPDATE tramo_cuota SET interes = 0.005 WHERE cod_tramo_cuota = 1;
+UPDATE tramo_cuota SET interes = 0.009 WHERE cod_tramo_cuota = 2;
+UPDATE tramo_cuota SET interes = 0.012 WHERE cod_tramo_cuota = 3;
+UPDATE tramo_cuota SET interes = 0.015 WHERE cod_tramo_cuota = 4;
+UPDATE tramo_cuota SET interes = 0.019 WHERE cod_tramo_cuota = 5;
+
+-- Alteramos el campo interes para que no tenga valores null
+ALTER TABLE tramo_cuota MODIFY interes NOT NULL;
+
+-- Borramos la tabla para poder ingresar los datos como indica el ejercicio
+DROP TABLE resumen_creditos_otorgados;
+
+-- Creamos nuevamente la tabla con los campos correctos
+CREATE TABLE resumen_creditos_otorgados (
+    correlativo          NUMBER NOT NULL PRIMARY KEY,
+    RUN                  VARCHAR2(10),
+    nombre_empleado      VARCHAR2(100),
+    cant_creditos        NUMBER,
+    monto_total_credito  NUMBER,
+    comision             NUMBER,
+    anno                 NUMBER(4),
+    mes                  NUMBER(2)
+);
+
+-- Creamos una secuencia para capturar errores 
+CREATE SEQUENCE seq_errores;
+
+-- Creación de variable BIND
+-- to_char(sysdate,'YYYY') Año de la fecha actual
+VARIABLE b_anno NUMBER;
+EXEC :b_anno := to_char(sysdate,'YYYY');
+
+
+
+
+-- CAMPO Valor cuota depende de la tabla de tramo 
+-- CAMPO Total Crédito depende de la tabla tramo y el interes
+DECLARE
+    -- Creamos un cursor para poblar la tabla resumen_credito
+    CURSOR cur_resumen_credito IS SELECT cli.RUN, cli.nombres, cli.ap_paterno ||' '|| cli.ap_materno AS "apellidos_cliente", E.RUN AS "run_empleado",
+                                    E.nombre, E.ap_paterno ||' '|| E.ap_materno AS "apellidos_empleado", C.monto, C.cuotas, C.fecha
+                                    FROM cliente cli
+                                    INNER JOIN venta V 
+                                    ON cli.RUN = V.run_cliente
+                                    INNER JOIN empleado E
+                                    ON V.run_empleado = E.RUN
+                                    INNER JOIN credito C
+                                    ON V.cod_venta = C.cod_venta
+                                    WHERE to_char(C.fecha,'YYYY') =  :b_anno 
+                                    ORDER BY C.fecha ASC, cli.nombres desc ; -- llamar a la variable BIND
+    -- Creamos un VARRAY 
+    TYPE tipo_varray_interes IS VARRAY(5) OF NUMBER(3,3);
+    -- Varible para guardar los intereses de la tabla en una lista
+    v_lista_interes tipo_varray_interes;
+    -- Varible para capturar el interes
+    v_interes tramo_cuota.interes%TYPE;
+    
+    -- Creamos un REGISTRO para poblar la TABLA RESUMEN CREDITO
+    TYPE tipo_registro_resumen_credito IS RECORD (
+    secuencia resumen_credito.correlativo%TYPE,
+    run_cli resumen_credito.run_cliente%TYPE,
+    nom_cli resumen_credito.nombre_cliente%TYPE,
+    ap_cli resumen_credito.apellidos_clientes%TYPE,
+    run_e resumen_credito.run_empleado%TYPE,
+    nombre_e resumen_credito.nombre_empleado%TYPE,
+    ap_e resumen_credito.apellidos_empleado%TYPE,
+    monto resumen_credito.monto_credito%TYPE,
+    cant_cuota resumen_credito.numero_cuotas%TYPE,
+    valor resumen_credito.valor_cuota%TYPE,
+    total resumen_credito.total_credtio%TYPE,
+    fecha resumen_credito.fecha_credito%TYPE);
+    
+    -- Variable para guardar el REGISTRO
+    reg_resumen_cred tipo_registro_resumen_credito;
+    
+    -- Variable para capturar el codigo de la cuota
+    v_codigo tramo_cuota.cod_tramo_cuota%TYPE;
+    
+    -- Variable para guardar el valor de la cuota
+    v_valor_cuota resumen_credito.valor_cuota%TYPE;
+    
+    -- Variable para guardar el valor del credito
+    v_total_credito resumen_credito.total_credtio%TYPE;
+    
+    
+    -- PARTE 2
+    -- Creamos un Cursor para caturar los datos necesarios para poblar la tabla RESUMEN_CREDITOS_OTORGADOS
+    CURSOR cur_creditos_otorgados IS SELECT RUN, initcap(nombre || ' ' ||ap_paterno ||' '|| ap_materno) AS "nombre", COUNT(cod_credito) AS "creditos" ,
+                                    C.monto, to_char(C.fecha, 'YYYY') AS "anio", to_number(to_char(C.fecha, 'MM')) AS "mes"
+                                    FROM empleado E
+                                    INNER JOIN venta V
+                                    ON E.RUN = V.run_empleado
+                                    INNER JOIN credito C
+                                    ON V.cod_venta = C.cod_venta
+                                    WHERE to_char(C.fecha , 'YYYY') = :b_anno -- Variable BIND
+                                    GROUP BY RUN, initcap(nombre || ' ' ||ap_paterno ||' '|| ap_materno), C.monto , to_char(C.fecha, 'YYYY'),to_number(to_char(C.fecha, 'MM'))
+                                    ORDER BY "mes", "nombre" desc;
+                                    
+    -- Creamos un registro para poblar la tabla de RESUMEN_CREDITOS_OTORGADOS
+    reg_creditos_otorgados resumen_creditos_otorgados%rowtype;
+    
+    -- Variable para guardar la comisión de la tabla de tramos
+    v_comision tramo_comision.comision%TYPE;
+    
+    -- Variables para registrar errores y las inicializamos
+    v_mensaje error_proceso.error_actulizacion%TYPE;
+    v_codigo_error error_proceso.mensaje_error%TYPE;
+    
+BEGIN 
+    -- Inicializamos el Arreglo
+    v_lista_interes := tipo_varray_interes(0,0,0,0,0);
+    
+    -- Borramos los datos de la tabla RESUMEN_CREDITO
+    EXECUTE IMMEDIATE ('TRUNCATE TABLE RESUMEN_CREDITO');
+    -- Borramos los datos de la tabla RESUEMEN_CREDITOS_OTORGADOS
+    EXECUTE IMMEDIATE ('TRUNCATE TABLE RESUMEN_CREDITOS_OTORGADOS');
+    -- Reiniciamos la SECUENCIA
+    EXECUTE IMMEDIATE ('DROP SEQUENCE SEQ_RES_CRED');
+    EXECUTE IMMEDIATE ('CREATE SEQUENCE SEQ_RES_CRED');
+    EXECUTE IMMEDIATE ('DROP SEQUENCE SEQ_RES_CRED_OTOR');
+    EXECUTE IMMEDIATE ('CREATE SEQUENCE SEQ_RES_CRED_OTOR');
+    -- Recorremos el primer cursor  para la tabla RESUMEN_CREDITO
+    FOR X IN cur_resumen_credito LOOP
+        BEGIN
+            -- Cálculos 
+               SELECT cod_tramo_cuota INTO v_codigo FROM tramo_cuota WHERE X.cuotas BETWEEN cuota_min AND cuota_max;
+               SELECT interes INTO v_lista_interes(v_codigo) FROM tramo_cuota WHERE X.cuotas BETWEEN cuota_min AND cuota_max;
+               -- Valor real de la cuota
+               v_valor_cuota := (X.monto/X.cuotas) * v_lista_interes(v_codigo) + (X.monto/X.cuotas);
+               -- Redondeamos el resultado
+               v_valor_cuota := round(v_valor_cuota);
+               -- Monto Total Crédito
+               v_total_credito := v_valor_cuota * X.cuotas;
+               -- Ingresamos los datos al registro
+               reg_resumen_cred.secuencia := seq_res_cred.NEXTVAL;
+               reg_resumen_cred.run_cli := X.RUN;
+               reg_resumen_cred.nom_cli := X.nombres;
+               reg_resumen_cred.ap_cli := X."apellidos_cliente";
+               reg_resumen_cred.run_e := X."run_empleado";
+               reg_resumen_cred.nombre_e := X.nombre;
+               reg_resumen_cred.ap_e := X."apellidos_empleado";
+               reg_resumen_cred.monto := X.monto;
+               reg_resumen_cred.cant_cuota := X.cuotas;
+               reg_resumen_cred.valor := v_valor_cuota;
+               reg_resumen_cred.total := v_total_credito;
+               reg_resumen_cred.fecha := X.fecha;
+            -- Objetivo INSERTAR DATOS EN TABLA RESUMEN_CREDITO
+            INSERT INTO resumen_credito VALUES reg_resumen_cred;
+        EXCEPTION
+        	WHEN zero_divide THEN
+        		v_codigo_error := SQLCODE;
+        		v_mensaje := sqlerrm;
+        		INSERT INTO error_proceso VALUES (seq_errores.NEXTVAL,v_codigo_error,v_mensaje);
+    		WHEN no_data_found THEN
+        		v_codigo_error := SQLCODE;
+        		v_mensaje := sqlerrm;
+        		INSERT INTO error_proceso VALUES (seq_errores.NEXTVAL,v_codigo_error,v_mensaje);
+    		When Too_Many_Rows Then
+        		V_Codigo_Error := Sqlcode;
+        		V_Mensaje := Sqlerrm;
+        		Insert Into Error_Proceso Values (seq_errores.Nextval,V_Codigo_Error,V_Mensaje);
+    		When Invalid_Number Then
+        		V_Codigo_Error := Sqlcode;
+        		V_Mensaje := Sqlerrm;
+        		Insert Into Error_Proceso Values (seq_errores.Nextval,V_Codigo_Error,V_Mensaje);
+    		WHEN OTHERS THEN 
+        		v_codigo_error := SQLCODE;
+        		v_mensaje := sqlerrm;
+        		INSERT INTO error_proceso VALUES (seq_errores.NEXTVAL,v_codigo_error,v_mensaje);
+        END;
+    END LOOP;
+    
+    
+    -- SEGUNDO CURSOR
+    OPEN cur_creditos_otorgados;
+    LOOP
+    BEGIN 
+        FETCH cur_creditos_otorgados INTO reg_creditos_otorgados.RUN, reg_creditos_otorgados.nombre_empleado, reg_creditos_otorgados.cant_creditos, reg_creditos_otorgados.monto_total_credito, reg_creditos_otorgados.anno, reg_creditos_otorgados.mes;
+        
+        -- Ingresamos la secuencia
+        reg_creditos_otorgados.correlativo := seq_res_cred_otor.NEXTVAL;
+        
+        -- Capturamos la comisión de la tabla de tramos
+        SELECT comision INTO v_comision FROM tramo_comision WHERE reg_creditos_otorgados.monto_total_credito BETWEEN monto_min AND monto_max;
+        
+        -- Calcular comisión
+        reg_creditos_otorgados.comision := round(reg_creditos_otorgados.monto_total_credito * v_comision);
+        
+        -- Objetivo INSERTAR DATOS EN LA TABLA RESUMEN CREDITOS OTORGADOS
+        INSERT INTO resumen_creditos_otorgados VALUES reg_creditos_otorgados;
+        
+        -- Si no se devuelve ninguna fila cierra y retorna un true
+        EXIT WHEN cur_creditos_otorgados%notfound;
+    EXCEPTION   
+    	WHEN zero_divide THEN
+        	v_codigo_error := SQLCODE;
+        	v_mensaje := sqlerrm;
+        	INSERT INTO error_proceso VALUES (seq_errores.NEXTVAL,v_codigo_error,v_mensaje);
+    	WHEN no_data_found THEN
+        	v_codigo_error := SQLCODE;
+       		v_mensaje := sqlerrm;
+       	 	INSERT INTO error_proceso VALUES (seq_errores.NEXTVAL,v_codigo_error,v_mensaje);
+    	When Too_Many_Rows Then
+        	V_Codigo_Error := Sqlcode;
+        	V_Mensaje := Sqlerrm;
+        	Insert Into Error_Proceso Values (seq_errores.Nextval,V_Codigo_Error,V_Mensaje);
+    	When Invalid_Number Then
+        	V_Codigo_Error := Sqlcode;
+        	V_Mensaje := Sqlerrm;
+        	Insert Into Error_Proceso Values (seq_errores.Nextval,V_Codigo_Error,V_Mensaje);
+    	WHEN OTHERS THEN 
+        	v_codigo_error := SQLCODE;
+        	v_mensaje := sqlerrm;
+        	INSERT INTO error_proceso VALUES (seq_errores.NEXTVAL,v_codigo_error,v_mensaje);
+    END;
+    END LOOP;
+    CLOSE cur_creditos_otorgados;
+    
+
+EXCEPTION
+    WHEN zero_divide THEN
+        v_codigo_error := SQLCODE;
+        v_mensaje := sqlerrm;
+        INSERT INTO error_proceso VALUES (seq_errores.NEXTVAL,v_codigo_error,v_mensaje);
+    WHEN no_data_found THEN
+        v_codigo_error := SQLCODE;
+        v_mensaje := sqlerrm;
+        INSERT INTO error_proceso VALUES (seq_errores.NEXTVAL,v_codigo_error,v_mensaje);
+    When Too_Many_Rows Then
+        V_Codigo_Error := Sqlcode;
+        V_Mensaje := Sqlerrm;
+        Insert Into Error_Proceso Values (seq_errores.Nextval,V_Codigo_Error,V_Mensaje);
+    When Invalid_Number Then
+        V_Codigo_Error := Sqlcode;
+        V_Mensaje := Sqlerrm;
+        Insert Into Error_Proceso Values (seq_errores.Nextval,V_Codigo_Error,V_Mensaje);
+    WHEN OTHERS THEN 
+        v_codigo_error := SQLCODE;
+        v_mensaje := sqlerrm;
+        INSERT INTO error_proceso VALUES (seq_errores.NEXTVAL,v_codigo_error,v_mensaje);
+END;

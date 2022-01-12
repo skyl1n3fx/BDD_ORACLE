@@ -1,0 +1,349 @@
+
+----------------------------------
+-- PRUEBA 3 
+-- NOMBRE : Jorge Quintui
+-- NOTA : 6.6
+-- PROFESOR :  Victor
+-- Año 2021
+----------------------------------
+
+----------------------------------------------------------------------
+-- Creamos Usuario para la prueba 
+----------------------------------------------------------------------
+CREATE USER prueba3 IDENTIFIED BY prueba3;
+GRANT ALL PRIVILEGES TO prueba3;
+----------------------------------------------------------------------
+
+
+-- Proceso efectuado en el año 2020 ingresar como parametro
+
+-- Objetivo poblar TABLA RESUMEN CREDITOS LA FAMA
+-- TABLA RESUMEN CAPTACION DE CREDITOS 
+-- TABLA ERROR PROCESO FN_OBTENER_ PUNTOS Mensaje Al cliente no se le asignan puntos porque se fuera del tramo , cantidad cuotas pagadas : variable
+
+-- REQ MINIMO 
+-- 1 PACKAGE CON UNA FUNCIÓN PARA OBTENER EL MONTO DEL CRÉDITO los mismos si no que retorne 0 en caso de error (que el empeleado no posee esta cualidad) , a la vez que inserte en la tabla errores
+-- 2 FUNCIONES ALMACENADAS 1 que obtenga la comisión Y otra qe obtenga los puntos, en caso de error retornar 0 y insertar en TABLA ERROR
+-- EN el mismo package usar 2 variables 1 para las cuotas y otra para guardar los puntos obtenidos
+-- Procedimiento ALMACENADO PRINCIPAL  que utilice los valores del package además debe poblar las tablas RESUMEN_CRESITO_LA_FAMA y RESUMEN_CAPTACION_CREDITOS,
+-- Debe incluir SQL DINÁMICO EN LA FUNCIÓN DEL PACKAGE, en ambas funciones almacenadas y en el procedimiento ALMACENADO PRINCIPAL para TRUNCAR las tablas resultantes del proceso
+-- Ingresar en el PROCEDIMIENTO PRINCIPAL como parametro el año del proceso TEST AÑO 2020
+-- Info ordenada por el run del empleado
+-- calculos redondeados a enteros
+
+-- USO DE UN TRIGGER AL INSERTAR, ELIMINAR O ACTUALIZAR en DETALLE COMPRA actualizar de manera AUTOMÁTICA el STOCK del producto
+--ADEMÁS SE DEBEN USAR SUBPROGRAMAS ADICIONALES PARA FACILITAR EL PROCESO
+-- Estimo añadir un procedimiento que inserte en la tabla registro error
+
+
+----------------------------------------------------------------------
+-- Alterar la TABLA TRAMO CUOTAS
+----------------------------------------------------------------------
+UPDATE tramo_cuotas SET interes_mensual = NULL;
+ALTER TABLE tramo_cuotas MODIFY interes_mensual NUMBER(3,3);
+-- Existe un error en la tabla TRAMO CUOTAS en los intereses mensuales
+UPDATE tramo_cuotas SET interes_mensual = 0.005 WHERE id_tramo = 1;
+UPDATE tramo_cuotas SET interes_mensual = 0.009 WHERE id_tramo = 2;
+UPDATE tramo_cuotas SET interes_mensual = 0.012 WHERE id_tramo = 3;
+UPDATE tramo_cuotas SET interes_mensual = 0.015 WHERE id_tramo = 4;
+COMMIT;
+----------------------------------------------------------------------
+
+--------------------------------------------------------------------------------
+-- TRIGGER PARA ACTUALIZAR EL STOCK
+--------------------------------------------------------------------------------
+CREATE OR REPLACE TRIGGER trg_actualizar_stock 
+AFTER INSERT OR UPDATE OR DELETE ON detalle_compra
+FOR EACH ROW
+DECLARE
+    v_cantidad NUMBER;    
+    v_stock NUMBER;
+BEGIN
+    IF inserting THEN
+        UPDATE productos SET stock = stock - :NEW.cantidad WHERE id_producto = :NEW.id_producto;
+    ELSIF updating THEN
+        SELECT stock INTO v_stock FROM productos WHERE id_producto = :OLD.id_producto;
+         IF :NEW.cantidad > :OLD.cantidad AND v_stock >= :NEW.cantidad THEN
+            v_cantidad := (:NEW.cantidad - :OLD.cantidad);
+            v_stock := v_stock - v_cantidad;
+            UPDATE productos SET stock = v_stock WHERE id_producto = :OLD.id_producto;
+        ELSIF :NEW.cantidad < :OLD.cantidad AND v_stock >= :NEW.cantidad THEN
+             v_cantidad := (:OLD.cantidad - :NEW.cantidad);
+            v_stock := v_stock + v_cantidad;
+            UPDATE productos SET stock = v_stock WHERE id_producto = :OLD.id_producto;
+        END IF;
+    ELSIF deleting THEN
+        SELECT stock INTO v_stock FROM productos WHERE id_producto = :OLD.id_producto;
+        v_cantidad := :OLD.cantidad;
+        v_stock := v_stock + v_cantidad;
+        UPDATE productos SET stock = v_stock WHERE id_producto = :OLD.id_producto;
+    END IF;
+END trg_actualizar_stock;
+--------------------------------------------------------------------------------
+
+
+--------------------------------------------------------------------------------
+-- OPERACIONES
+--------------------------------------------------------------------------------
+-- Insertamos una compra
+INSERT INTO compra VALUES (44,'26/06/2021',13020,'12887899',1,2);
+-- Insertamos 2 detalles de compra
+INSERT INTO detalle_compra VALUES (sq_det.NEXTVAL, 1, 8640, 44,22);
+INSERT INTO detalle_compra VALUES (sq_det.NEXTVAL, 2, 4380, 44,21);
+-- Actualizamos las compras
+UPDATE detalle_compra SET cantidad = 2 WHERE num_compra = 43 AND id_producto = 83;
+UPDATE detalle_compra SET cantidad = 1 WHERE num_compra = 43 AND id_producto = 85;
+-- Eliminamos el detalle del producto 90 de la compra 43
+DELETE FROM detalle_compra WHERE num_compra = 43 AND id_producto =  90;
+--------------------------------------------------------------------------------
+
+----------------------------------------------------------------------
+--                         SECUENCIAS                               --
+----------------------------------------------------------------------
+-- Crear secuencia SEQ_ERROR_PROCESO
+CREATE SEQUENCE seq_error_proceso;
+-- Creamos la secuencia para el resumen de los creditos
+CREATE SEQUENCE seq_resumen_credito;
+-- Creamos una secuencia para el resumen de captacion de creditos
+CREATE SEQUENCE seq_resumen_captacion;
+----------------------------------------------------------------------
+----------------------------------------------------------------------
+-- Creamos un PACKAGE donde crearemos SUBPROGRAMAS ADICIONALES al sistema para mejorar los procesos
+----------------------------------------------------------------------
+CREATE OR REPLACE PACKAGE pkg_subprogramas_adicionales IS
+    -- Procedimiento que INSERTA EN LA TABLA ERRORES
+    PROCEDURE sp_errores(p_subprograma error_proceso.sentencia_error%TYPE, p_mensaje error_proceso.mensaje_error%TYPE);
+    -- Procedimiento que trunca una tabla con SQL DINÁMICO
+    PROCEDURE sp_trunca_tablas(p_nombre_tabla VARCHAR2);
+    -- Procedimiento que reinicia una secuencia
+    PROCEDURE sp_reiniciar_secuencia(p_nombre_seq VARCHAR2);
+END pkg_subprogramas_adicionales;
+
+CREATE OR REPLACE PACKAGE BODY pkg_subprogramas_adicionales IS 
+    PROCEDURE sp_errores(p_subprograma error_proceso.sentencia_error%TYPE, p_mensaje error_proceso.mensaje_error%TYPE) IS
+        reg_error error_proceso%rowtype;
+    BEGIN 
+        reg_error.correlativo := seq_error_proceso.NEXTVAL;
+        reg_error.sentencia_error := p_subprograma;
+        reg_error.mensaje_error :=  p_mensaje;
+        INSERT INTO error_proceso VALUES reg_error;
+    END sp_errores;
+    
+    PROCEDURE  sp_trunca_tablas(p_nombre_tabla VARCHAR2) IS
+    BEGIN 
+        EXECUTE IMMEDIATE 'TRUNCATE TABLE ' ||p_nombre_tabla;
+    END  sp_trunca_tablas;
+    
+    PROCEDURE sp_reiniciar_secuencia(p_nombre_seq VARCHAR2)IS
+    BEGIN
+        EXECUTE IMMEDIATE 'DROP SEQUENCE ' || p_nombre_seq;
+        EXECUTE IMMEDIATE 'CREATE SEQUENCE ' || p_nombre_seq;
+    END sp_reiniciar_secuencia;
+END pkg_subprogramas_adicionales;
+
+----------------------------------------------------------------------
+
+
+--Creamos un PACKAGE que contenga una función que obtenga el Monto del Crédito
+-- Además de contener 2 variables públicas para guardar los cuotas y los puntos obtenidos
+CREATE OR REPLACE PACKAGE pkg_credito IS
+    v_cuotas resumen_credito_la_fama.numero_cuotas%TYPE;
+    v_puntos resumen_credito_la_fama.puntos%TYPE;
+    FUNCTION fn_obtener_monto(p_monto resumen_credito_la_fama.monto_credito%TYPE, p_cuotas creditos.cuotas%TYPE) RETURN resumen_credito_la_fama.monto_total_credito%TYPE;
+END pkg_credito;
+
+CREATE OR REPLACE PACKAGE BODY pkg_credito IS
+    FUNCTION fn_obtener_monto (p_monto resumen_credito_la_fama.monto_credito%TYPE, p_cuotas creditos.cuotas%TYPE) RETURN resumen_credito_la_fama.monto_total_credito%TYPE IS
+        v_interes tramo_cuotas.interes_mensual%TYPE; 
+        v_mensaje_error error_proceso.mensaje_error%TYPE;
+        v_monto resumen_credito_la_fama.monto_total_credito%TYPE DEFAULT 0;
+    BEGIN 
+        BEGIN
+            -- Si el monto es mayor de 500000 verificar si hay interés
+            IF p_monto > 500000 THEN
+                -- Capturamo el interés
+                SELECT interes_mensual INTO v_interes FROM tramo_cuotas WHERE p_cuotas BETWEEN cuota_min AND cuota_max;
+                --Cálculo el monto más los intereses de la tabla de tramos
+                v_monto := p_monto * v_interes;
+                v_monto := v_monto + p_monto;
+            ELSE
+                v_monto := p_monto;
+            END IF;
+        EXCEPTION 
+            WHEN OTHERS THEN
+                v_monto := p_monto;
+        END;
+        
+        RETURN v_monto;
+    EXCEPTION 
+        WHEN no_data_found THEN
+            pkg_subprogramas_adicionales.sp_errores('PKG_CREDITO.FN_OBTENER_MONTO','El Cliente no tiene interés');
+            RETURN 0;
+        WHEN zero_divide THEN 
+            pkg_subprogramas_adicionales.sp_errores('PKG_CREDITO.FN_OBTENER_MONTO','Se hizo una división por cero');
+            RETURN 0;
+        WHEN OTHERS THEN 
+            v_mensaje_error := sqlerrm;
+            pkg_subprogramas_adicionales.sp_errores('PKG_CREDITO.FN_OBTENER_MONTO',v_mensaje_error);
+            RETURN 0;
+    END fn_obtener_monto;
+END pkg_credito;
+
+
+
+-- FUNCIONES ALMACENADAS
+CREATE OR REPLACE FUNCTION fn_obtener_comision_credito (p_monto resumen_captacion_creditos.monto_total%TYPE) RETURN NUMBER IS
+    v_porcentaje NUMBER;
+    v_comision NUMBER;
+BEGIN
+    BEGIN
+        SELECT comision INTO v_porcentaje FROM tramo_comisiones WHERE p_monto BETWEEN monto_min AND monto_max;
+        v_porcentaje := v_porcentaje/100;
+        v_comision := p_monto * v_porcentaje;
+        RETURN v_comision;
+    EXCEPTION    
+        WHEN OTHERS THEN 
+            RETURN p_monto;
+    END;
+END fn_obtener_comision_credito;
+
+
+
+
+CREATE OR REPLACE FUNCTION fn_obtener_puntos_ganados (p_idcredito pago_credito.id_credito%TYPE) RETURN NUMBER IS
+    v_cuotas_pagadas pago_credito.numero_cuota%TYPE;
+    v_mensaje_error error_proceso.mensaje_error%TYPE;
+BEGIN 
+    -- Rescatamos las cuotas pagadas por el cliente 
+    SELECT COUNT(numero_cuota) INTO v_cuotas_pagadas
+    FROM pago_credito
+    WHERE id_credito = p_idcredito
+    GROUP BY id_credito
+    ORDER BY id_credito ASC;
+    -- Rescatamos los puntos segun corresponda de la tabla de tramos
+    SELECT puntos INTO pkg_credito.v_puntos FROM tramo_cuotas_pagadas WHERE v_cuotas_pagadas BETWEEN numero_cuotas_min AND numero_cuotas_max;
+    RETURN pkg_credito.v_puntos;
+    EXCEPTION 
+            WHEN no_data_found THEN
+            pkg_subprogramas_adicionales.sp_errores('FN_OBTENER_PUNTOS_GANADOS','Al Cliente no se le asignan puntos porque se encuentra fuera del tramo, cantidad de cuotas pagadas : ' || v_cuotas_pagadas);
+            RETURN 0;
+        WHEN zero_divide THEN 
+            pkg_subprogramas_adicionales.sp_errores('FN_OBTENER_PUNTOS_GANADOS','Se hizo una división por cero');
+            RETURN 0;
+        WHEN OTHERS THEN 
+            v_mensaje_error := sqlerrm;
+            pkg_subprogramas_adicionales.sp_errores('FN_OBTENER_PUNTOS_GANADOS',v_mensaje_error);
+            RETURN 0;
+END fn_obtener_puntos_ganados;
+
+
+CREATE OR REPLACE PROCEDURE sp_resumen_captacion_creditos(p_anio NUMBER)IS 
+    reg_resumen resumen_captacion_creditos%rowtype;
+    
+    CURSOR cur_resumen IS 
+    SELECT pnombre ||' '|| ap_paterno AS "nombre", COUNT(id_credito) AS "cantidad", SUM(monto_pago) AS "monto_total"
+    FROM empleados E
+    INNER JOIN creditos C
+    ON E.id_empleado = C.id_empleado
+    WHERE to_char(fecha_credito,'YYYY') = p_anio
+    GROUP BY  pnombre ||' '|| ap_paterno
+    ORDER BY "monto_total";
+    
+BEGIN
+    FOR X IN cur_resumen 
+    LOOP            
+        reg_resumen.correlativo := seq_resumen_captacion.NEXTVAL;
+        reg_resumen.nombre_vendedor := X."nombre";
+        reg_resumen.anno_resumen := p_anio;
+        reg_resumen.cantidad_creditos := X."cantidad"; 
+        reg_resumen.monto_total := X."monto_total";
+        reg_resumen.comision := fn_obtener_comision_credito(reg_resumen.monto_total);
+        -- Objetivo insertar en RESUMEN CAPTACION CREDITOS
+        INSERT INTO resumen_captacion_creditos VALUES reg_resumen;
+        COMMIT;
+    END LOOP;
+EXCEPTION
+    WHEN OTHERS THEN 
+        pkg_subprogramas_adicionales.sp_errores('SP_RESUMEN_CAPTACION_CREDITOS','error el el bloque');
+END sp_resumen_captacion_creditos;
+
+
+CREATE OR REPLACE PROCEDURE sp_resumen_creditos (p_anio NUMBER) IS
+    CURSOR cur_credito IS 
+    SELECT C.id_credito, C.run_cliente, cli.dv_cliente, cli.nombre ||' '||cli.appaterno ||' '|| cli.apmaterno  AS "nombre_cliente",C.fecha_credito,C.monto_pago,C.cuotas, 
+    E.rutemp, E.pnombre ||' '|| E.ap_paterno AS "nombre_empleado"
+    FROM creditos C
+    INNER JOIN clientes cli
+    ON C.run_cliente = cli.run_cliente
+    INNER JOIN empleados E
+    ON C.id_empleado = E.id_empleado WHERE to_char(C.fecha_credito,'YYYY')= p_anio
+    ORDER BY C.fecha_credito; -- e.rutemp; LA PRUEBA PIDE ORDENAR POR RUT EMPLEADO PERO EN LA IMAGEN ESTÁ ORDENADA POR FECHA
+    
+    reg_resumen resumen_credito_la_fama%rowtype;
+    
+    reg_credito cur_credito%rowtype;
+    
+    v_monto  resumen_credito_la_fama.monto_total_credito%TYPE;
+    
+BEGIN
+    OPEN cur_credito;
+    
+        LOOP
+        BEGIN
+            FETCH cur_credito INTO reg_credito;
+                    v_monto := pkg_credito.fn_obtener_monto(reg_credito.monto_pago, reg_credito.cuotas);
+                    pkg_credito.v_cuotas := round(v_monto / reg_credito.cuotas);
+                    pkg_credito.v_puntos := fn_obtener_puntos_ganados(reg_credito.id_credito);
+                    
+                    reg_resumen.nro := seq_resumen_credito.NEXTVAL;
+                    reg_resumen.run_cliente := reg_credito.run_cliente;
+                    reg_resumen.dv_cliente := reg_credito.dv_cliente;
+                    reg_resumen.nombre_cliente := reg_credito."nombre_cliente";
+                    reg_resumen.rut_vendedor :=  reg_credito.rutemp;
+                    reg_resumen.nombre_vendedor :=  reg_credito."nombre_empleado";
+                    reg_resumen.monto_credito :=  reg_credito.monto_pago;
+                    reg_resumen.numero_cuotas :=  reg_credito.cuotas;
+                    reg_resumen.fecha_credito := reg_credito.fecha_credito;
+                    reg_resumen.valor_cuota := pkg_credito.v_cuotas;
+                    reg_resumen.monto_total_credito := v_monto;
+                    reg_resumen.puntos := pkg_credito.v_puntos;
+                    
+                    --Objetivo
+                    -- Insertar datos en RESUMEN_CREDITO
+                    EXIT WHEN cur_credito%notfound;
+                    INSERT INTO resumen_credito_la_fama VALUES reg_resumen;
+                    COMMIT;
+        EXCEPTION
+        WHEN OTHERS THEN 
+            pkg_subprogramas_adicionales.sp_errores('SP_RESUMEN_CREDITOS','error en LOOP');
+            
+        END;        
+                    
+        END LOOP;
+
+    CLOSE cur_credito;
+EXCEPTION
+    WHEN OTHERS THEN 
+         pkg_subprogramas_adicionales.sp_errores('SP_RESUMEN_CREDITOS','error el el bloque');
+END sp_resumen_creditos;
+
+EXECUTE sp_resumen_creditos(2020);
+EXECUTE sp_resumen_captacion_creditos(2020);
+
+
+-- Procedimiento ALMACENADO PRINCIPAL
+
+CREATE OR REPLACE PROCEDURE sp_principal IS
+
+BEGIN
+    pkg_subprogramas_adicionales.sp_trunca_tablas('RESUMEN_CREDITO_LA_FAMA');
+    pkg_subprogramas_adicionales.sp_trunca_tablas('RESUMEN_CAPTACION_CREDITOS');
+    sp_resumen_creditos(2020);
+    sp_resumen_captacion_creditos(2020);
+END sp_principal;
+
+-------------------------------------
+-- Ejecutar SP PRINCIPAL
+--------------------------------------
+
+EXECUTE sp_principal;

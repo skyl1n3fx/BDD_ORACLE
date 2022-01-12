@@ -1,0 +1,245 @@
+------------------------
+-- Prueba 3
+-- Nombre : Jorge Quintui 
+-- Profesor: Alan Gajardo
+-- Nota : 6.4
+------------------------
+
+
+-- 1) CREACION TRIGGER
+CREATE OR REPLACE TRIGGER trg_1
+AFTER
+DELETE OR INSERT OR UPDATE
+ON orden_compra
+FOR EACH ROW
+DECLARE
+  v_comision NUMBER:=0;
+  v_comision_antigua NUMBER:=0;
+BEGIN
+  IF inserting THEN
+    v_comision:= round(:NEW.total_pagar * 0.015,0);
+    INSERT INTO comision_ventas VALUES(:NEW.orden_id, v_comision);
+  END IF;
+  IF deleting THEN
+    DELETE FROM comision_ventas WHERE orden_id = :OLD.orden_id;
+  END IF;
+  IF updating THEN
+    --D VALOR DE LA NUEVA COMISION
+    v_comision:= round(:NEW.total_pagar * 0.015,0);
+    
+    SELECT monto_comision INTO v_comision_antigua
+    FROM comision_ventas WHERE orden_id = :NEW.orden_id;
+    
+    IF v_comision > v_comision_antigua THEN
+      UPDATE comision_ventas SET monto_comision= v_comision
+      WHERE orden_id = :NEW.orden_id;
+    END IF;
+  END IF;
+END;
+
+--CREATE TEGGER2
+CREATE OR REPLACE TRIGGER trg_2
+AFTER
+DELETE OR INSERT OR UPDATE
+ON orden_compra
+FOR EACH ROW
+DECLARE
+  v_iva NUMBER:=0;
+  v_civa_antigua NUMBER:=0;
+BEGIN
+  IF inserting THEN
+    v_iva:= round(:NEW.total_pagar * 0.015,0);
+    INSERT INTO comision_compra VALUES(:NEW.orden_id, v_comision);
+  END IF;
+  IF deleting THEN
+    DELETE FROM comision_compra WHERE orden_id = :OLD.orden_id;
+  END IF;
+  IF updating THEN
+  v_iva:= round(:NEW.total_pagar * 0.019,0);
+  
+  SELECT iva INTO v_iva_antigua
+  FROM orden_compra WHERE orden_id = :NEW.orden_id;
+    
+    IF iva > v_civa_antigua THEN
+      UPDATE orden_compra SET iva= v_iva
+      WHERE orden_id = :NEW.orden_id;
+    END IF;
+  END IF;
+END ;
+
+
+INSERT INTO orden_compra VALUES(11,'06/07/2', 175506, 0,0,0,8,'17258962=7',3);
+
+
+
+
+-- PARTE 2
+
+
+
+CREATE OR REPLACE PACKAGE pkg_makween IS
+    v_mensaje_error error_proceso.rutina_error%TYPE;
+    PROCEDURE sp_errores(p_rutina error_proceso.rutina_error%TYPE , p_error error_proceso.error_oracle%TYPE);
+    FUNCTION fn_calcular_descuento(p_monto IN NUMBER, p_porcentaje IN NUMBER) RETURN NUMBER;
+    FUNCTION fn_monto_pie(p_rut_cli IN cliente.rut_cliente%TYPE )RETURN NUMBER;
+END pkg_makween;
+
+
+CREATE OR REPLACE PACKAGE BODY pkg_makween IS
+    PROCEDURE sp_errores(p_rutina error_proceso.rutina_error%TYPE , p_error error_proceso.error_oracle%TYPE) IS 
+    BEGIN 
+        INSERT INTO error_proceso VALUES (seq_errores.NEXTVAL, p_rutina,p_error);
+    END sp_errores;
+    
+    FUNCTION fn_calcular_descuento(p_monto IN NUMBER, p_porcentaje IN NUMBER) RETURN NUMBER IS 
+    v_monto NUMBER;
+    BEGIN 
+    v_monto := round(p_monto * p_porcentaje);
+    RETURN v_monto;
+    EXCEPTION 
+        WHEN OTHERS THEN 
+            v_mensaje_error := sqlerrm;
+            sp_errores('ERROR EN PKG_MAKWEEN.FN_CALCULAR_DESCUENTO',v_mensaje_error);
+            RETURN 0;
+            
+    END fn_calcular_descuento;
+    
+    FUNCTION fn_monto_pie(p_rut_cli IN cliente.rut_cliente%TYPE )RETURN NUMBER IS
+    v_monto NUMBER;
+    v_monto_pie NUMBER;
+    v_porc_pie NUMBER;
+    v_porc_descuento NUMBER;
+    v_fecha DATE;
+    v_neto NUMBER;
+    v_descuento NUMBER DEFAULT 0;
+    BEGIN
+    -- Rescatar un porcentaje dependiendo del monto pie
+    EXECUTE IMMEDIATE 'SELECT p.monto_pie , c.total_pagar , c.fecha_orden INTO :v_monto_pie, :v_monto, :v_fecha
+    FROM pie_orden_compra p
+    inner join ORDEN_COMPRA c
+    ON p.ORDEN_ID = c.ORDEN_ID
+    WHERE C.RUT_CLIENTE = :p_rut_cl'
+    INTO v_monto_pie, v_monto, v_fecha
+    USING p_rut_cli;
+    
+    v_porc_pie := round(v_monto/v_monto_pie);
+    
+    SELECT porc_descuento INTO v_porc_descuento FROM rango_descto_pie WHERE v_porc_pie BETWEEN rango_inf AND  rango_sup;
+    v_porc_descuento := v_porc_descuento/100;
+    v_descuento  := fn_calcular_descuento(v_monto,v_porc_descuento);
+    IF to_char(v_fecha,'MM') IN (1,2) THEN 
+         -- Descuento Adicional
+         SELECT neto INTO v_neto  FROM orden_compra WHERE  rut_cliente = p_rut_cli;
+         -- Calcular descuento adicional
+         v_descuento  :=  v_descuento + fn_calcular_descuento(v_neto,0.05);
+    END IF;
+    RETURN v_descuento ;
+    EXCEPTION 
+        WHEN OTHERS THEN 
+            v_mensaje_error := sqlerrm;
+            sp_errores('ERROR EN PKG_MAKWEEN.FN_MONTO_PIE',v_mensaje_error);
+            RETURN 0;
+    END fn_monto_pie; -- IDK
+    
+END pkg_makween;
+
+
+
+-- SUBPROGRAMAS ADICIONALES
+CREATE OR REPLACE PACKAGE pkg_operaciones IS
+    FUNCTION fn_obtener_valor_netop(p_ordenid IN NUMBER) RETURN NUMBER;
+    PROCEDURE sp_truncar_tabla(nombre_tabla IN VARCHAR2);
+END pkg_operaciones;
+
+CREATE OR REPLACE PACKAGE BODY pkg_operaciones IS
+    FUNCTION fn_obtener_valor_netop(p_ordenid IN NUMBER) RETURN NUMBER IS
+        v_neto NUMBER;
+    BEGIN 
+        SELECT neto INTO v_neto FROM orden_compra WHERE orden_id = p_ordenid;
+        RETURN v_neto;
+    EXCEPTION 
+        WHEN OTHERS THEN 
+            pkg_makween.v_mensaje_error := sqlerrm;
+            pkg_makween.sp_errores('ERROR EN PKG_MAKWEEN.FN_CALCULAR_DESCUENTO',pkg_makween.v_mensaje_error);
+            RETURN 0; 
+    END fn_obtener_valor_netop;
+    
+ PROCEDURE  sp_truncar_tabla(nombre_tabla VARCHAR2) IS
+    BEGIN 
+        EXECUTE IMMEDIATE 'TRUNCATE TABLE ' || nombre_tabla;
+    END  sp_truncar_tabla;
+    
+END pkg_operaciones;
+
+
+CREATE OR REPLACE FUNCTION fn_calc_cargo_extra (p_neto NUMBER, p_monto NUMBER) RETURN NUMBER IS
+    v_porc NUMBER DEFAULT 0;
+    v_total NUMBER DEFAULT 0;
+BEGIN 
+    SELECT porcentaje INTO v_porc FROM rango_impuesto WHERE p_neto BETWEEN rango_inf AND rango_sup ;
+    v_total := round(p_monto * v_porc);
+    RETURN v_total;
+EXCEPTION 
+    WHEN OTHERS THEN 
+        pkg_makween.v_mensaje_error := sqlerrm;
+        pkg_makween.sp_errores('ERROR EN PKG_MAKWEEN.FN_CALC_CARGO_EXTRA',pkg_makween.v_mensaje_error);
+        RETURN 0;
+END fn_calc_cargo_extra; 
+
+
+CREATE OR REPLACE FUNCTION fn_comision_ventas (p_neto IN NUMBER) RETURN NUMBER IS 
+    v_porcentaje NUMBER;
+    v_comision NUMBER DEFAULT 0;
+BEGIN
+    SELECT porc_comision INTO v_porcentaje FROM rango_comision WHERE p_neto BETWEEN minimo AND maximo;
+    v_porcentaje := v_porcentaje/100;
+    v_comision :=round( p_neto * v_porcentaje);
+    RETURN v_comision;
+EXCEPTION 
+    WHEN OTHERS THEN 
+        pkg_makween.v_mensaje_error := sqlerrm;
+        pkg_makween.sp_errores('ERROR EN PKG_MAKWEEN.FN_CALC_CARGO_EXTRA',pkg_makween.v_mensaje_error);
+        RETURN 0;
+END fn_comision_ventas;
+
+
+CREATE OR REPLACE PROCEDURE sp_principal (p_fecha DATE) IS 
+    CURSOR cur_orden IS
+                    SELECT orden_id, fecha_orden, neto, rut_cliente, total_pagar
+                    FROM orden_compra;
+    reg_resumen resumen_ordenes_annio%rowtype;
+BEGIN 
+    --EXECUTE IMMEDIATE 'TRUNCATE TABLE  RESUMEN_ORDENES_ANNIO';
+    pkg_operaciones.sp_truncar_tabla('RESUMEN_ORDENES_ANNIO');
+    FOR X IN cur_orden
+    LOOP
+        SELECT monto_pie INTO  reg_resumen.pie  FROM pie_orden_compra WHERE orden_id = X.orden_id;
+        reg_resumen.orden_id := X.orden_id;
+        reg_resumen.fecha_orden := X.fecha_orden;
+        reg_resumen.annio_proceso := to_number(to_char(p_fecha,'YYYY'));
+        reg_resumen.mes_proceso := to_number(to_char(p_fecha,'MM'));
+        reg_resumen.neto := X.neto;
+        reg_resumen.descuento := pkg_makween.fn_monto_pie(X.rut_cliente);
+        reg_resumen.cargo := fn_calc_cargo_extra(X.neto,X.neto);
+        reg_resumen.iva := round(0.19 * (X.neto +  reg_resumen.cargo - reg_resumen.descuento ));
+        reg_resumen.total_pagar := X.total_pagar;
+        reg_resumen.nuevo_total_pagar := X.neto + reg_resumen.iva +  reg_resumen.cargo - reg_resumen.descuento; 
+        reg_resumen.comision_venta := fn_comision_ventas(X.neto);
+        
+        INSERT INTO resumen_ordenes_annio VALUES ( reg_resumen.orden_id,
+        reg_resumen.fecha_orden,
+        reg_resumen.annio_proceso ,
+        reg_resumen.mes_proceso,
+        reg_resumen.neto,
+        reg_resumen.iva,
+        reg_resumen.total_pagar,
+        reg_resumen.pie ,
+        reg_resumen.descuento ,
+        reg_resumen.cargo ,
+        reg_resumen.nuevo_total_pagar,
+        reg_resumen.comision_venta);
+    END LOOP;
+END sp_principal;
+
+
+CALL sp_principal(sysdate);
