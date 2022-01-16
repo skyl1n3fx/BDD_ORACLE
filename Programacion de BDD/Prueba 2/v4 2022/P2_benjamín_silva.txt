@@ -1,0 +1,301 @@
+
+
+
+--------------------------------------------------------------
+
+-- Prueba 2
+-- Freddy Campos
+-- Nombre : Benjamín Silva
+
+-------------------------------------------------------------
+
+
+-- TRAMO asistencia
+-- TRAMO PROMEDIO
+
+-- OBJ RESUMEN SITUACION
+
+-- CALCULAR PROMEDIO DE NOTAS PARA LA TABLA DE TRAMO
+-- SUMAR LAS ASISTENCIAS PARA LA TABLA DE TRAMO
+-- PONER -- SI NO SE ENCUENTRA UN VALOR
+
+-- variable bind
+VARIABLE b_nombre VARCHAR2(100);
+EXEC :b_nombre := '';
+
+-- Activamos la salida de DBMS
+SET SERVEROUTPUT ON;
+
+-- CREAR DIRECTORIO
+CREATE OR REPLACE DIRECTORY fotos_reprobados AS 'C:\imagenes';
+
+-- CREAR PERMISOS DESDE UN DBA
+GRANT READ, WRITE ON DIRECTORY fotos_reprobados TO prueba2;
+
+-- SECUENCIAS
+CREATE SEQUENCE seq_errores;
+
+-- ALTER A LA TABLA ESTADO
+ALTER TABLE estado_repro ADD foto BLOB DEFAULT empty_blob();
+
+
+-- Bloque anónimo 
+-- Registra el resumen situación
+DECLARE
+
+-- CURSORES PARA EL PROCESO
+
+-- Cursor que recorre los alumnos
+    CURSOR cur_alumnos IS
+                    SELECT cod_alumno, pnombre, apellidopat 
+                    FROM alumno;
+                    
+-- Cursor que recorre las notas de los alumnos
+    CURSOR cur_notas (p_codalumno NUMBER)  IS 
+                SELECT round(SUM(promedio) / COUNT(A.cod_alumno),1) AS "promedio"
+                FROM alumno A
+                    INNER JOIN notas N
+                    ON A.cod_alumno = N.cod_alumno
+                    WHERE A.cod_alumno = p_codalumno;
+
+-- Cursor que recorre las notas por asignatura
+    CURSOR cur_notas_asig (p_codalumno NUMBER) IS
+        SELECT N.cod_alumno, sigla, nombre, promedio 
+        FROM notas N
+        INNER JOIN asignatura A
+        ON N.cod_asignatura = A.cod_asignatura
+        WHERE N.cod_alumno = p_codalumno AND promedio >= 6;
+        
+-- Cursor que recorre asignaturas PENDIENTES 
+        CURSOR cur_notas_pend (p_codalumno NUMBER) IS
+        SELECT N.cod_alumno, sigla, nombre, promedio 
+        FROM notas N
+        INNER JOIN asignatura A
+        ON N.cod_asignatura = A.cod_asignatura
+        WHERE N.cod_alumno = p_codalumno AND N.situacion = 'P';
+        
+-- Cursor que recorre las asistencias de los alumnos
+    CURSOR cur_asistencias (p_codalumno NUMBER) IS
+                    SELECT COUNT(alu.cod_alumno) AS "cantidad_asist", 
+                    round(SUM (A.porcentaje) /  COUNT(alu.cod_alumno),1) AS "porcentaje_asist"
+                    FROM alumno alu
+                        INNER JOIN asistencia A
+                        ON alu.cod_alumno = A.cod_alumno
+                        WHERE A.cod_alumno = p_codalumno
+                        GROUP BY alu.cod_alumno;
+                        
+-- Registro de tipo cursor
+    reg_alumnos cur_alumnos%rowtype;
+    reg_notas cur_notas%rowtype;
+    reg_asistencia cur_asistencias%rowtype;
+    reg_notas_asig cur_notas_asig%rowtype;
+    reg_notas_pend cur_notas_pend%rowtype;
+    
+-- Registro de la tabla
+    reg_resumen_situacion resumen_situacion%rowtype;
+    
+-- Variables
+    v_porc_red NUMBER;
+    v_pendiente VARCHAR2(2);
+    v_tramo_asist NUMBER;
+    v_tramo_promedio NUMBER;
+    v_blob BLOB;
+    v_bfile BFILE;
+    v_nombre VARCHAR2(100);
+    
+    
+BEGIN 
+    OPEN cur_alumnos;
+        LOOP
+            BEGIN
+                    FETCH cur_alumnos INTO reg_alumnos;
+                    EXIT WHEN cur_alumnos%notfound;
+                    
+                    -- Objetivos
+                    -- Poblar RESUMEN_SITUACION
+                    reg_resumen_situacion.cod_alumno := reg_alumnos.cod_alumno;
+                    reg_resumen_situacion.pnombre := reg_alumnos.pnombre;
+                    reg_resumen_situacion.apellidopat := reg_alumnos.apellidopat;
+                    reg_resumen_situacion.situacion := 'REPROBADO';
+                    reg_resumen_situacion.estado_promedio := '--';
+                    reg_resumen_situacion.estado_asisten := '--';
+                    
+                    
+
+                    -- 2do CURSOR NOTAS PARA EL PROMEDIO
+                    OPEN cur_notas(reg_alumnos.cod_alumno);
+                        LOOP
+                            BEGIN
+                            
+                                -- Recuperar datos de las notas
+                                FETCH cur_notas INTO reg_notas;
+                                EXIT WHEN cur_notas%notfound;
+                            
+                                
+                                -- Calcular PROMEDIO
+                                reg_resumen_situacion.promedio := reg_notas."promedio";
+                                dbms_output.put_line('EL PROMEDIO DEL ALUMNO ES ' || reg_resumen_situacion.promedio);
+                                
+                                -- ESTADO PROMEDIO 
+                                SELECT DISTINCT(cod_alumno) INTO v_pendiente FROM notas WHERE cod_alumno = reg_alumnos.cod_alumno AND situacion = 'I';
+                                IF SQL%found THEN
+                                    dbms_output.put_line(reg_alumnos.cod_alumno || ' NO PENDIENTE');
+                                    
+                                -- TABLA DE TRAMOS
+                                    SELECT id_tramo, estado INTO v_tramo_promedio,  reg_resumen_situacion.estado_promedio FROM tramo_promedio WHERE reg_resumen_situacion.promedio BETWEEN prom_minimo AND prom_maximo;
+                                    
+                                END IF;
+                                
+                            EXCEPTION
+                                WHEN OTHERS THEN
+                                    -- ESTÁ PENDIENTE 
+                                    INSERT INTO errores VALUES (seq_errores.NEXTVAL, 100, 'PROBLEMAS CON EL PROMEDIO DEL ALUMNO  ' || reg_alumnos.pnombre  || ' PRO: ' ||  reg_resumen_situacion.promedio, sysdate);
+                                    dbms_output.put_line('ERROR EN EL SEGUNDO CURSOR');
+                            END;
+                        END LOOP;
+                    CLOSE cur_notas;
+                    
+                    OPEN cur_asistencias (reg_alumnos.cod_alumno);
+                        LOOP
+                            BEGIN
+                                -- Recuperar datos de las asistencias
+                                FETCH cur_asistencias INTO reg_asistencia;
+                                EXIT WHEN cur_asistencias%notfound;
+                                
+                                v_porc_red :=  TRUNC(reg_asistencia."porcentaje_asist");
+                                
+                                -- Porcentaje de asistencia
+                                reg_resumen_situacion.porc_asistencia := reg_asistencia."porcentaje_asist";
+                                
+                                -- Estado asistencia
+                                SELECT id_tramo, descripcion INTO v_tramo_asist, reg_resumen_situacion.estado_asisten FROM tramo_asistencia WHERE v_porc_red BETWEEN por_min AND por_max;
+                                
+                            EXCEPTION
+                                WHEN OTHERS THEN
+                                    -- NO SE ENCUENTRA LA ASISTENCIA EN EL TRAMO
+                                      INSERT INTO errores VALUES (seq_errores.NEXTVAL,  100, 'PROBLEMAS CON LA ASISTENCIA DEL ALUMNO  ' || reg_alumnos.pnombre  || ' % ASISTENCIA: ' ||  reg_resumen_situacion.porc_asistencia, sysdate);
+                                     dbms_output.put_line('ERROR EN EL TERCER CURSOR');
+                            END;
+                            dbms_output.put_line('ASISTENCIA ' || reg_resumen_situacion.estado_asisten);
+                        END LOOP;
+                    CLOSE cur_asistencias;
+                    
+                    -- ESTABLECER LA SITUACIÓN DEL ALUMNO
+                    
+                    IF  v_tramo_promedio IN (3,4) AND v_tramo_asist = 3 THEN
+                        dbms_output.put_line('APROBADO');
+                        reg_resumen_situacion.situacion := 'APROBADO';
+                    ELSE
+                        dbms_output.put_line('REPROBADO');
+                    END IF;
+                    
+                    -- INSERT 
+                    INSERT INTO resumen_situacion VALUES reg_resumen_situacion;
+                    
+                    -- PROCESO CURSOS APROBADOS NOTA SUPERIOR A 6
+                    ---------------------------------------------------------------------------
+                    
+                    OPEN cur_notas_asig  (reg_alumnos.cod_alumno);
+                        LOOP
+                            BEGIN
+                                -- Recuperar datos de las asignaturas
+                                FETCH cur_notas_asig INTO reg_notas_asig;
+                                EXIT WHEN cur_notas_asig%notfound;
+                                
+                                --CURSOS APROBADOS
+                                INSERT INTO cursos_aprobados VALUES reg_notas_asig;
+                                
+                            EXCEPTION
+                                WHEN OTHERS THEN
+                                    dbms_output.put_line('ERROR CURSOS APROB');
+                            END;
+                        END LOOP;
+                    CLOSE cur_notas_asig;
+                
+
+            EXCEPTION 
+                WHEN OTHERS THEN
+                    dbms_output.put_line('ERROR EN EL PRIMER CURSOR ');
+            END;
+            
+            -- PROCESO NOTAS PENDIENTES
+            ------------------------------------------------------------------
+            
+            OPEN cur_notas_pend (reg_alumnos.cod_alumno);
+                LOOP
+                    BEGIN
+                        -- Recuperar datos de las asignaturas
+                        FETCH cur_notas_pend INTO reg_notas_pend;
+                        EXIT WHEN cur_notas_pend%notfound;
+                        
+                        -- INSERT
+                        INSERT INTO asignaturas_pendientes VALUES reg_notas_pend;  
+                        INSERT INTO errores VALUES (seq_errores.NEXTVAL,  0, 'ALUMNO  COD ' || reg_alumnos.cod_alumno  || ' CON LA ASIGNATURA ' ||  reg_notas_pend.nombre || ' CON PROMEDIO CERO', sysdate);
+                    EXCEPTION
+                        WHEN OTHERS THEN
+                             dbms_output.put_line('ERROR EN NOTAS PENDIENTES');
+                    END;
+                END LOOP;
+            CLOSE cur_notas_pend;
+            
+
+        END LOOP;
+    CLOSE cur_alumnos;
+    
+    
+    
+    
+END;
+
+
+
+-- PARTE 2
+------- PROCESO DE FOTOS
+
+DECLARE
+    v_blob BLOB;
+    v_bfile BFILE;
+    
+    CURSOR cur_fotos IS
+    SELECT cod_alumno, foto FROM estado_repro FOR UPDATE OF foto;
+    
+    CURSOR cur_reprobados IS
+    SELECT cod_alumno, pnombre,promedio, porc_asistencia FROM resumen_situacion
+    WHERE situacion = 'REPROBADO';
+    
+    
+BEGIN
+    FOR X IN cur_reprobados 
+    LOOP
+        BEGIN
+            INSERT INTO estado_repro VALUES (X.cod_alumno, X.pnombre, X.promedio, X.porc_asistencia,  empty_blob());
+            EXCEPTION
+            WHEN OTHERS THEN
+                dbms_output.put_line(sqlerrm);
+        END;
+    END LOOP;
+
+    FOR X IN cur_fotos 
+    LOOP
+        BEGIN 
+            -- ESTABLECER 
+            :b_nombre := X.cod_alumno || '.JPG';
+            v_bfile := bfilename('FOTOS_REPROBADOS',:b_nombre);
+            v_blob := X.foto;
+            
+            -- PROCESO DE ACTUALIZACION DE FOTOS
+            dbms_lob.OPEN(v_bfile,dbms_lob.lob_readonly);
+            dbms_lob.loadfromfile(v_blob,v_bfile,dbms_lob.getlength(v_bfile));
+            dbms_lob.CLOSE(v_bfile);
+            
+            dbms_output.put_line('SE INSERTÓ CON ÉXITO');
+        EXCEPTION
+            WHEN OTHERS THEN
+                dbms_output.put_line('ERRROR');
+                INSERT INTO errores VALUES (seq_errores.NEXTVAL,0,'Error con la foto del alumno COD. '  || X.cod_alumno , sysdate);
+        END;
+    END LOOP;
+END;
+
+
+
