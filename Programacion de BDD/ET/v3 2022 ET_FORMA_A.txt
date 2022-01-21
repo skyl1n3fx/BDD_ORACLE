@@ -1,0 +1,337 @@
+
+-----------------------------------------------------
+--          Exámen transversal                 --
+-----------------------------------------------------
+
+---------------- FORMA A ---------------------
+--                                                             --
+-- Nombre :                                            --
+-- Profesor : Freddy Campos              --
+--                                                             --
+-----------------------------------------------------
+
+
+
+-- Proceso N°1
+------------------------------------------------------
+
+-- Activamos la salida de dbms
+SET SERVEROUTPUT ON;
+
+
+-- Creamos un TRIGGER para actualizar la tasa 
+----------------------------------------------------------------------------------------------
+CREATE OR REPLACE TRIGGER TRG_TRANSACCION 
+AFTER UPDATE ON PRODUCTO
+FOR EACH ROW
+BEGIN
+    IF NVL(:NEW.TASAINT_PRODUCTO,0) > NVL(:OLD.TASAINT_PRODUCTO,0) THEN
+        -- ADICIONAR 1%
+        DBMS_OUTPUT.PUT_LINE('SUPERIOR');
+        UPDATE TIPO_TRANSACCION_TARJETA SET TASAINT_TPTRAN_TARJETA = TASAINT_TPTRAN_TARJETA + 0.01 WHERE COD_PRODUCTO = :NEW.COD_PRODUCTO;
+        COMMIT;
+    ELSIF NVL(:NEW.TASAINT_PRODUCTO,0) <= NVL(:OLD.TASAINT_PRODUCTO,0) THEN
+        -- REDUCIR EN 12 MESES EL NRO MÁXIMO DE CUOTAS
+        DBMS_OUTPUT.PUT_LINE('IGUAL O INFERIOR');
+        UPDATE TIPO_TRANSACCION_TARJETA SET NRO_MAXIMO_CUOTAS_TRAN = NRO_MAXIMO_CUOTAS_TRAN - 12 WHERE COD_PRODUCTO = :NEW.COD_PRODUCTO; 
+        COMMIT;
+    END IF;
+END TRG_TRANSACCION;
+
+
+-- Bloque anónimo que ejecuta los cambios
+BEGIN
+    -- Crédito de emergencia
+    UPDATE PRODUCTO SET TASAINT_PRODUCTO = 0.5 WHERE COD_PRODUCTO = 4;
+    -- Crédito de consumo
+    UPDATE PRODUCTO SET TASAINT_PRODUCTO = 0.1 WHERE COD_PRODUCTO = 2;
+    -- Tarjeta premier
+    UPDATE PRODUCTO SET TASAINT_PRODUCTO = 0.05 WHERE COD_PRODUCTO = 1;
+END;
+
+-- Revisar los cambios
+SELECT * FROM TIPO_TRANSACCION_TARJETA;
+
+ROLLBACK;
+
+
+-- Proceso N°2
+------------------------------------------------------
+
+-- Se solicita hacer un proceso que cargue las fotos de los clientes antiguos
+-- Con un DBA
+-- Crear el directorio de las fotos de los clientes
+
+CREATE OR REPLACE DIRECTORY FOTOS_CLIENTES_HIPES AS 'C:\imagenes\fotos_clientes';
+
+-- Dar permisos al usuario para interactuar con el directorio
+
+GRANT READ, WRITE ON DIRECTORY FOTOS_CLIENTES_HIPES TO ETMDY_FA;
+
+CREATE OR REPLACE PROCEDURE SP_CARGA_FOTOS IS  
+    V_BLOB BLOB;
+    V_BFILE BFILE;
+    V_FOTO VARCHAR2(100);
+    V_ID CLIENTE.NUMRUN%TYPE;
+    
+    CURSOR CUR_FOTOS IS 
+        SELECT NUMRUN, FOTO
+                        FROM CLIENTE FOR 
+                        UPDATE OF FOTO;
+BEGIN
+    OPEN CUR_FOTOS;
+        LOOP
+            BEGIN
+                FETCH CUR_FOTOS INTO V_ID, V_BLOB;
+                EXIT WHEN CUR_FOTOS%NOTFOUND;
+                
+                -- Proceso de actualización de fotos
+                -----------------------------------------------------
+                
+                V_FOTO := V_ID || '.JPG';
+                V_BFILE := BFILENAME('FOTOS_CLIENTES_HIPES', V_FOTO);
+                
+                DBMS_LOB.OPEN(V_BFILE,DBMS_LOB.LOB_READONLY);
+                DBMS_LOB.LOADFROMFILE(V_BLOB,V_BFILE,DBMS_LOB.GETLENGTH(V_BFILE));
+                DBMS_LOB.CLOSE(V_BFILE);
+                DBMS_OUTPUT.PUT_LINE('Se actualizó');
+                
+            EXCEPTION
+                WHEN OTHERS THEN 
+                    DBMS_OUTPUT.PUT_LINE('No se encuentra el archivo ' || V_FOTO || ' del cliente ' || V_ID);
+                END;
+        END LOOP;
+    CLOSE CUR_FOTOS;
+EXCEPTION
+    WHEN OTHERS THEN
+        DBMS_OUTPUT.PUT_LINE('Error al procesar el bloque');
+END SP_CARGA_FOTOS;
+
+--------------------------------------------------
+
+-- Actualizar fotos
+-- Ejecutar el procedimiento almacenado que actualiza las fotos de los clientes
+
+--------------------------------------------------
+
+EXECUTE SP_CARGA_FOTOS;
+
+-- Verificar la foto el cliente con el rut 5331148
+--------------------------------------------------
+
+SELECT FOTO FROM CLIENTE WHERE NUMRUN = '5331148';
+
+
+-- Proceso N°3
+------------------------------------------------------
+
+-- Creación de un PACKAGE 
+-- Una Función pública
+-- Un procedimiento
+-- 4 variables públicas
+
+-- a)
+
+CREATE OR REPLACE PACKAGE PKG_PROCESOS_HIPES IS
+    FUNCTION FN_CALC_FACTOR_AUM_COMPRAS (P_RUN CLIENTE.NUMRUN%TYPE, P_FECHA IN DATE) RETURN NUMBER;
+    PROCEDURE SP_GESTION_ERRORES(P_RUTINA ERROR_PROCESOS_MENSUALES.RUTINA_ERROR%TYPE, P_MENSAJE ERROR_PROCESOS_MENSUALES.DESCRIP_ERROR%TYPE);
+    -- 4 Variables públicas
+    V_MENSAJE_ERROR ERROR_PROCESOS_MENSUALES.DESCRIP_ERROR%TYPE;
+    V_FECHA_INSCRIPCION CLIENTE.FECHA_INSCRIPCION%TYPE;
+    V_ANIOS_ANTIGUEDAD NUMBER DEFAULT 0;
+    V_FECHA_PROCESO DATE;
+END PKG_PROCESOS_HIPES ;
+
+
+CREATE OR REPLACE PACKAGE BODY PKG_PROCESOS_HIPES IS
+
+    FUNCTION FN_CALC_FACTOR_AUM_COMPRAS (P_RUN CLIENTE.NUMRUN%TYPE, P_FECHA IN DATE) RETURN NUMBER IS
+        V_PORC_AUMENTO NUMBER DEFAULT 0;
+    BEGIN
+    
+        -- Rescatamos la fecha de inscripción del cliente
+        EXECUTE IMMEDIATE
+        'SELECT FECHA_INSCRIPCION FROM CLIENTE  WHERE NUMRUN = :P_RUN'
+        INTO V_FECHA_INSCRIPCION USING p_run;
+        
+        -- Rescatamos los años de antiguedad del cliente
+        V_ANIOS_ANTIGUEDAD := TRUNC(MONTHS_BETWEEN(P_FECHA, V_FECHA_INSCRIPCION)/12); 
+        
+         -- Tabla parametrica
+         EXECUTE IMMEDIATE
+         'SELECT PORC_AUMENTO FROM RANGO_AUMENTO_CUPOCOMPRA WHERE :V_ANIOS_ANTIGUEDAD BETWEEN ANT_MIN AND ANT_MAX'
+         INTO V_PORC_AUMENTO USING V_ANIOS_ANTIGUEDAD;
+        
+        -- Retornamos el porcentaje de aumento del cliente por cupo compras
+        RETURN V_PORC_AUMENTO;
+        
+    EXCEPTION 
+        WHEN OTHERS THEN
+             V_MENSAJE_ERROR := SQLERRM;
+            SP_GESTION_ERRORES('PKG_PROCESOS_HIPES.FN_CALC_FACTOR_AUM_COMPRAS',V_MENSAJE_ERROR);
+            RETURN 0;
+    END FN_CALC_FACTOR_AUM_COMPRAS ;
+
+   PROCEDURE SP_GESTION_ERRORES(P_RUTINA ERROR_PROCESOS_MENSUALES.RUTINA_ERROR%TYPE, P_MENSAJE ERROR_PROCESOS_MENSUALES.DESCRIP_ERROR%TYPE) IS
+   BEGIN
+        EXECUTE IMMEDIATE 
+        'INSERT INTO ERROR_PROCESOS_MENSUALES VALUES (SEQ_ERROR.nextval,:p_rutina, :p_mensaje)'
+        USING P_RUTINA, P_MENSAJE;
+        COMMIT;
+   END SP_GESTION_ERRORES;
+   
+END PKG_PROCESOS_HIPES;
+
+
+-- b)
+
+CREATE OR REPLACE FUNCTION FN_CALC_FACTOR_AUM_AVANCE  (P_RUN CLIENTE.NUMRUN%TYPE, P_FECHA IN DATE) RETURN NUMBER IS
+    V_FECHA_NAC DATE;
+    V_EDAD NUMBER;
+    V_PORC NUMBER;
+BEGIN 
+
+    -- Extraemos la fecha de nacimiento del cliente 
+    EXECUTE IMMEDIATE
+    'SELECT FECHA_NACIMIENTO FROM CLIENTE WHERE NUMRUN = :p1'
+    INTO V_FECHA_NAC USING P_RUN;
+    
+    -- Calculamos la edad del cliente
+    V_EDAD := TRUNC(MONTHS_BETWEEN(P_FECHA, V_FECHA_NAC)/12); 
+    
+    -- Extraemos el porcentaje de aumento correspondiente por cupo de super avance de la tabla paramétrica
+    EXECUTE IMMEDIATE 
+    'SELECT PORC_AUMENTO FROM RANGO_AUMENTO_SUPERAVANCE WHERE :V_EDAD BETWEEN EDAD_MIN AND EDAD_MAX'
+    INTO V_PORC USING V_EDAD;
+    
+    -- Retornamos el porcentaje de aumento correspondiente al cliente
+    RETURN V_PORC;
+    
+EXCEPTION
+    WHEN OTHERS THEN
+        PKG_PROCESOS_HIPES.V_MENSAJE_ERROR := SQLERRM;
+        PKG_PROCESOS_HIPES.SP_GESTION_ERRORES('FN_CALC_FACTOR_AUM_AVANCE',PKG_PROCESOS_HIPES.V_MENSAJE_ERROR);
+        RETURN 0;
+END FN_CALC_FACTOR_AUM_AVANCE;
+
+-- c)
+
+-- Función almacenada que permite truncar tablas con SQL Dinámico
+
+CREATE OR REPLACE FUNCTION FN_TRUNCA_TABLAS(P_NOMBRE_TABLA IN VARCHAR2) RETURN NUMBER IS 
+BEGIN
+    EXECUTE IMMEDIATE 'TRUNCATE TABLE ' || P_NOMBRE_TABLA;
+    COMMIT;
+    RETURN 1;
+EXCEPTION
+    WHEN OTHERS THEN    
+        PKG_PROCESOS_HIPES.V_MENSAJE_ERROR := SQLERRM;
+        PKG_PROCESOS_HIPES.SP_GESTION_ERRORES('FN_TRUNCA_TABLAS',PKG_PROCESOS_HIPES.V_MENSAJE_ERROR);
+        RETURN 0;
+END FN_TRUNCA_TABLAS;
+
+
+-- Procedimiento almacenado principal del proceso
+
+-- Consideraciones
+-- Se aplica sólo a
+-- Clientes que tengan profesión de Tecnico o ingeniero y nacidos el mes anterior
+
+CREATE OR REPLACE PROCEDURE SP_AUMENTOS_MES_CLIENTE(P_FECHA_PROCESO DATE) IS 
+
+    -- Definimos el cursor que recorra los clientes de un mes en especifico
+    CURSOR CUR_CLIENTE (P_MES NUMBER) IS
+    SELECT C.NUMRUN, C.DVRUN, C.FECHA_NACIMIENTO
+    FROM CLIENTE C
+    INNER JOIN OCUPACION O
+    ON C.COD_OCUPACION = O.COD_OCUPACION
+    WHERE TO_CHAR(C.FECHA_NACIMIENTO,'MM') = P_MES AND (LOWER(O.NOMBRE_PROF_OFIC) LIKE '%técnico%' OR  LOWER(O.NOMBRE_PROF_OFIC ) LIKE '%ingeniero%')
+    ORDER BY C.FECHA_NACIMIENTO DESC;
+    
+    -- Variable registro de tipo cursor
+    REG_CLIENTES CUR_CLIENTE%ROWTYPE;
+    REG_AUMENTO_MES AUMENTOS_MES_CLIENTE%ROWTYPE;
+    
+    -- Variable para almacenar el mes anterior
+    V_MES_ANTERIOR NUMBER;
+    
+    -- Variable valida 
+    V_VALIDA NUMBER DEFAULT 0;
+    
+    -- Variable contador
+    V_CANTIDAD_CLIENTES NUMBER DEFAULT 0;
+    
+    -- Variable para sql dinámico
+    v_sql varchar2(400);
+    
+BEGIN
+
+    -- Limpieza
+    V_VALIDA := FN_TRUNCA_TABLAS('AUMENTOS_MES_CLIENTE');
+    
+    -- Calcular el mes anterior del proceso
+    V_MES_ANTERIOR :=  TO_NUMBER(TO_CHAR(ADD_MONTHS(P_FECHA_PROCESO,-1),'MM'));
+    
+    OPEN CUR_CLIENTE(V_MES_ANTERIOR);
+        LOOP
+            BEGIN
+                
+                FETCH CUR_CLIENTE INTO REG_CLIENTES;
+                    EXIT WHEN CUR_CLIENTE%NOTFOUND;
+                    
+                    REG_AUMENTO_MES.FECHA_PROCESO := P_FECHA_PROCESO;
+                    REG_AUMENTO_MES.NUMRUN := REG_CLIENTES.NUMRUN;
+                    REG_AUMENTO_MES.DVRUN := REG_CLIENTES.DVRUN;
+                    REG_AUMENTO_MES.FECHA_NACIMIENTO := REG_CLIENTES.FECHA_NACIMIENTO;
+                    
+                    -- Cálculos
+                    
+                    v_sql := 'SELECT CUPO_SUPER_AVANCE FROM TARJETA_CLIENTE WHERE NUMRUN = :p1';
+                    EXECUTE IMMEDIATE v_sql INTO REG_AUMENTO_MES.CUPO_SUPER_AVANCE USING REG_AUMENTO_MES.NUMRUN;
+                    
+                    v_sql := 'SELECT CUPO_COMPRA FROM TARJETA_CLIENTE WHERE NUMRUN = :p1';
+                    EXECUTE IMMEDIATE v_sql INTO REG_AUMENTO_MES.CUPO_COMPRAS USING REG_AUMENTO_MES.NUMRUN;
+                    
+                    REG_AUMENTO_MES.CUPO_COMPRAS := REG_AUMENTO_MES.CUPO_COMPRAS * (1 + (PKG_PROCESOS_HIPES.FN_CALC_FACTOR_AUM_COMPRAS(REG_AUMENTO_MES.NUMRUN , P_FECHA_PROCESO)/100));
+                    REG_AUMENTO_MES.CUPO_SUPER_AVANCE := REG_AUMENTO_MES.CUPO_SUPER_AVANCE * (1 + (FN_CALC_FACTOR_AUM_AVANCE(REG_AUMENTO_MES.NUMRUN , P_FECHA_PROCESO)/100));
+                    
+                -- Objetivo
+                -- Poblar la tabla AUMENTOS_MES_CLIENTE
+                     
+                INSERT INTO AUMENTOS_MES_CLIENTE VALUES REG_AUMENTO_MES;                
+                COMMIT;
+                
+            EXCEPTION
+                WHEN OTHERS THEN
+                    PKG_PROCESOS_HIPES.V_MENSAJE_ERROR := SQLERRM;
+                    PKG_PROCESOS_HIPES.SP_GESTION_ERRORES('SP_AUMENTOS_MES_CLIENTE',PKG_PROCESOS_HIPES.V_MENSAJE_ERROR);
+            END;
+            
+        END LOOP;
+        
+    CLOSE CUR_CLIENTE;
+    
+    -- Imprimir contador de clientes procesados
+    
+    v_sql := 'SELECT COUNT(*) FROM AUMENTOS_MES_CLIENTE';
+    EXECUTE IMMEDIATE v_sql INTO V_CANTIDAD_CLIENTES;
+    
+    DBMS_OUTPUT.PUT_LINE('Cantidad de Clientes Procesados MES : ' || V_CANTIDAD_CLIENTES );
+EXCEPTION
+    WHEN OTHERS THEN
+        PKG_PROCESOS_HIPES.V_MENSAJE_ERROR := SQLERRM;
+        PKG_PROCESOS_HIPES.SP_GESTION_ERRORES('SP_AUMENTOS_MES_CLIENTE',PKG_PROCESOS_HIPES.V_MENSAJE_ERROR);   
+        
+END SP_AUMENTOS_MES_CLIENTE;
+
+
+
+
+-- Bloque anónimo  
+-- Ejecutar el proceso principal
+--------------------------------------------------
+
+BEGIN 
+    -- Fecha del proceso 
+    SP_AUMENTOS_MES_CLIENTE('20/10/2020');
+END;
