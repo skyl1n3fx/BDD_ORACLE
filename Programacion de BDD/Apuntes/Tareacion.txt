@@ -1,0 +1,172 @@
+--PRIMER EJERCICIO
+CREATE OR REPLACE VIEW V_COMISION_FACTURAS AS
+select initcap(e.nombre||' '||e.apellido) "NOMBRE EMPLEADO",
+count(f.nro_factura) "CANTIDAD FACTURAS EMITIDAS",
+NVL(COUNT(co.nro_factura),0) "CANT_FACTURAS CON COMISION",
+TO_CHAR(NVL(SUM(co.monto_comision),0),'999G999G999') "TOTAL COMISION",
+TO_CHAR(e.sueldo,'$999G999G999')  "SUELDO",
+TO_CHAR(NVL(SUM(co.monto_comision),0)+e.sueldo,'$999G999G999') "SUELDO MAS COMISION"
+from factura f left join comision_ventas co on f.nro_factura = co.nro_factura 
+join empleado e on f.rut_empleado = e.rut_empleado group by e.nombre,e.apellido, e.sueldo
+ORDER BY e.nombre,e.apellido ASC WITH READ ONLY; 
+
+
+--SEGUNDO EJERCICIO
+CREATE OR REPLACE VIEW V_INTERES_FACTURA AS
+select 
+initcap(cli.nombre_cliente||' '||cli.apellido_cliente) "NOMBRE",
+f.nro_factura "NUMERO FACTURA",
+SUM(f.cantidad_cuotas) "CANTIDAD CUOTAS",
+TO_CHAR(f.monto_total,'$999G999G999') "TOTAL SIN INTERESES",
+TO_CHAR((c.valor_cuota)*0.05,'$999G999G999') "INTERES MENSUAL",
+TO_CHAR(((round(c.valor_cuota*0.05)*count(c.nro_cuota)))+f.monto_total,'$999G999G999') "MONTO TOTAL"
+from 
+ factura f inner join cuota c on f.nro_factura = c.nro_factura inner join 
+ cliente cli on f.id_cliente = cli.id_cliente
+ GROUP BY cli.nombre_cliente,cli.apellido_cliente,f.nro_factura, f.monto_total, c.valor_cuota
+ WITH READ ONLY
+;
+
+--EJERCICIO 3
+
+CREATE OR REPLACE VIEW V_BONOS_EMPLEADOS AS
+
+SELECT e.rut_empleado||'-'||e.dv_rut_empleado "RUT EMPLEADO",
+initcap(e.nombre||' '||e.apellido) "NOMBRE EMPLEADO",
+TO_CHAR(SYSDATE,'YYYY')-TO_CHAR(e.fecha_contratacion,'YYYY') "AÑOS TRABAJADOS",
+COUNT(f.nro_factura) "CANT FACTURAS 2017",
+TO_CHAR(e.sueldo,'$999G999G999') "SUELDO ACTUAL",
+CASE
+WHEN TO_CHAR(SYSDATE, 'YYYY')-TO_CHAR(e.fecha_contratacion,'YYYY') BETWEEN 1 AND 10 THEN 0.03*COUNT(f.nro_factura)
+WHEN TO_CHAR(SYSDATE, 'YYYY')-TO_CHAR(e.fecha_contratacion,'YYYY') BETWEEN 11 AND 20 THEN 0.04*COUNT(f.nro_factura)
+WHEN TO_CHAR(SYSDATE, 'YYYY')-TO_CHAR(e.fecha_contratacion,'YYYY')>20 THEN 0.05*COUNT(f.nro_factura)
+END "BONO",
+TO_CHAR(CASE
+WHEN TO_CHAR(SYSDATE, 'YYYY')-TO_CHAR(e.fecha_contratacion,'YYYY') BETWEEN 1 AND 10 THEN 0.03*COUNT(f.nro_factura)
+WHEN TO_CHAR(SYSDATE, 'YYYY')-TO_CHAR(e.fecha_contratacion,'YYYY') BETWEEN 11 AND 20 THEN 0.04*COUNT(f.nro_factura)
+WHEN TO_CHAR(SYSDATE, 'YYYY')-TO_CHAR(e.fecha_contratacion,'YYYY')>20 THEN 0.05*COUNT(f.nro_factura)
+END*e.sueldo,'$999G999G999') "VALOR BONO",
+TO_CHAR((CASE
+WHEN TO_CHAR(SYSDATE, 'YYYY')-TO_CHAR(e.fecha_contratacion,'YYYY') BETWEEN 1 AND 10 THEN 0.03*COUNT(f.nro_factura)
+WHEN TO_CHAR(SYSDATE, 'YYYY')-TO_CHAR(e.fecha_contratacion,'YYYY') BETWEEN 11 AND 20 THEN 0.04*COUNT(f.nro_factura)
+WHEN TO_CHAR(SYSDATE, 'YYYY')-TO_CHAR(e.fecha_contratacion,'YYYY')>20 THEN 0.05*COUNT(f.nro_factura)
+END*e.sueldo)+e.sueldo,'$999G999G999') "SUELDO MAS BONO"
+
+FROM empleado e inner join factura f on f.rut_empleado = e.rut_empleado
+WHERE TO_CHAR(f.fecha,'YYYY')=2017
+GROUP BY e.rut_empleado,e.dv_rut_empleado,e.nombre,e.apellido,e.fecha_contratacion, f.fecha, e.sueldo, e.fecha_contratacion
+WITH READ ONLY
+;
+
+--EJERCICIO 4
+
+INSERT ALL
+         INTO factura (nro_factura,fecha,monto_total,cantidad_cuotas,id_cliente,rut_empleado)
+         VALUES (factura,fecha,total,cuotas,id_cliente,rut_empleado)
+SELECT nro_factura as factura,fecha as fecha,monto_total as total,cantidad_cuotas as cuotas ,id_cliente,rut_empleado
+FROM historico_factura h
+WHERE TO_CHAR(h.fecha,'YYYY')=2017 and h.cantidad_cuotas IS NOT NULL and not exists
+    (
+    SELECT  * FROM factura f WHERE TO_CHAR(f.fecha,'YYYY')=2017 and f.cantidad_cuotas IS NOT NULL and f.nro_factura=h.nro_factura 
+    )
+ORDER BY h.nro_factura;
+
+
+-------------------------------------
+--EJERCICIO 5
+CREATE PROFILE PERFIL_RRHH LIMIT 
+SESSIONS_PER_USER 3 
+IDLE_TIME 10
+FAILED_LOGIN_ATTEMPTS 3
+;
+
+CREATE PROFILE PERFIL_GERENCIA LIMIT 
+SESSIONS_PER_USER 1 
+IDLE_TIME 5 
+FAILED_LOGIN_ATTEMPTS 3 
+CONNECT_TIME UNLIMITED;
+
+--EJERCICIO 5.2
+
+CREATE ROLE ROL_RRHH;
+CREATE ROLE ROL_GERENCIA;
+
+--ROL RRHH
+GRANT SELECT, UPDATE, DELETE ON PRUEBA_FINAL.factura TO ROL_RRHH;
+GRANT SELECT, UPDATE, DELETE ON PRUEBA_FINAL.empleado TO ROL_RRHH;
+GRANT SELECT, UPDATE, DELETE ON PRUEBA_FINAL.cliente TO ROL_RRHH;
+GRANT SELECT ON V_BONOS_EMPLEADOS TO ROL_RRHH;
+GRANT SELECT ON V_COMISION_FACTURAS TO ROL_RRHH;
+GRANT SELECT ON V_INTERES_FACTURA TO ROL_RRHH;
+
+--ROL GERENCIA
+GRANT SELECT ON V_COMISION_FACTURAS TO ROL_GERENCIA;
+GRANT SELECT ON V_INTERES_FACTURA TO ROL_GERENCIA;
+
+
+CREATE USER ANDREA IDENTIFIED BY ANDREA321 ACCOUNT UNLOCK;
+GRANT ROL_RRHH, CONNECT TO ANDREA;
+GRANT CREATE SESSION TO ROL_RRHH;
+
+GRANT SELECT ON EMPLEADO TO ANDREA;
+GRANT SELECT ON FACTURA TO ANDREA;
+GRANT SELECT ON CLIENTE TO ANDREA;
+
+CREATE USER GERENTE IDENTIFIED BY GERENTE321 ACCOUNT UNLOCK;
+GRANT RESOURCE, CONNECT TO GERENTE;
+GRANT ROL_GERENCIA, CONNECT TO GERENTE;
+GRANT SELECT ON V_COMISION_FACTURAS TO GERENTE;
+GRANT SELECT ON V_INTERES_FACTURA TO GERENTE;
+GRANT CREATE VIEW TO GERENTE;
+GRANT CREATE MATERIALIZED VIEW TO GERENTE;
+
+--SINONIMOS
+
+CREATE PUBLIC SYNONYM FACTURAS FOR FACTURA;
+CREATE PUBLIC SYNONYM EMPLEADOS FOR EMPLEADO;
+CREATE PUBLIC SYNONYM CLIENTES FOR CLIENTE;
+
+
+---------------------------------------------------
+
+SELECT 	UPPER(C.NOMBRE_CLIENTE || ' ' || C.APELLIDO_CLIENTE) as "CLIENTE",
+	UPPER(C.DIRECCION_CLIENTE) as "DIRECCION", 
+	NVL(TO_CHAR(C.CELULAR),'SIN REGISTRAR') as "CELULAR",
+	TO_CHAR(C.FECHA_INCORPORACION,'MONTH') AS "MES INCORPORACION",
+       	CASE  
+          		WHEN CELULAR IS NULL THEN 'NO SE PUEDE CONTACTAR'
+          		ELSE TO_CHAR(ADD_MONTHS(C.fecha_incorporacion,3),'MONTH')
+      	END AS "MES DE CONTACTO"     
+FROM CLIENTE C
+JOIN FACTURA F
+ON C.Id_Cliente = F.Id_Cliente and to_char(F.Fecha,'yyyy')='2017' 
+WHERE substr(C.Nombre_Cliente,0,1) in ('A') AND C.Celular IS NULL 
+GROUP BY C.Nombre_Cliente, C.Apellido_Cliente, C.Direccion_Cliente, 
+C.Celular,TO_CHAR(C.FECHA_INCORPORACION,'MONTH'),TO_CHAR(ADD_MONTHS(C.fecha_incorporacion,3),'MONTH')
+ORDER BY "CELULAR" DESC;
+
+CREATE INDEX IDX_FACTURAS ON factura(nombre_cliente)  ;
+
+--------------------------------------------------------------------------------------------
+GRANT SELECT_CATALOG_ROLE TO PRUEBA_FINAL;
+GRANT SELECT ANY DICTIONARY TO PRUEBA_FINAL;
+--------------------------------------------------------------------------------------------
+
+SELECT 	SUBSTR(E.Rut_Empleado,0,2)||'.'||SUBSTR(E.Rut_Empleado,3,3) ||'.' ||
+       	SUBSTR(E.Rut_Empleado,6,3) || '-' || E.Dv_Rut_Empleado AS "RUT", 
+       	UPPER(E.Nombre || ' ' || E.Apellido) AS "EMPLEADO",
+       	TO_CHAR(E.Sueldo,'$999G999') AS "SUELDO",
+       	REPLACE(S.Nombre_Sucursal,'_',' ') AS "SUCURSAL",
+       	S.Pais,
+       	E.Direccion_Empleado
+
+FROM Empleado E
+JOIN Tipo_Empleado T
+ON (T.Tipo_Empleado = E.Tipo_Empleado)
+JOIN Sucursal S
+ON (S.Id_Sucursal = E.Id_Sucursal)
+WHERE initcap(S.Pais) = 'Chile' and instr(lower(E.Direccion_Empleado),'pasaje') =0;
+
+CREATE INDEX IDX_EMPLEADOS ON empleado(INSTR(LOWER(direccion_empleado),'pasaje'));
+
+

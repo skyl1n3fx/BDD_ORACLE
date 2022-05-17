@@ -1,0 +1,71 @@
+Select * from v$version;
+
+
+GRANT CONNECT TO uwu; // Permisos para conectarse
+
+RESOURCES // Permisos 
+
+CREATE TABLE usu2 IDENTIFIED BY usu2;
+DEFAULT TABLESPACE USERS
+TEMPORARY TABLESPACE TEMP
+
+
+CREATE TABLESPACE P1;
+
+ALTER USER USU2 DEFAULT TABLESPACE P1;
+
+// ESPACIO DE ALMACENAMIENTO QUE RESERVE EN MI TABLESPACE 
+// 10 MEGAS DE ESPACIO
+ALTER USER USU2 QUOTA 10m ON P1;
+
+// Sin necesidad de limite de espacio
+ALTER USER USU2 QUOTA UNLIMITED ON P1;
+
+//
+ALTER USER USU2 QUOTA 5m ON P1 QUOTA 0 ON USERS;
+
+
+// Ver los espacios reservados por cada usuario
+SELECT * FROM DBA_TS_QUOTAS;
+
+// PERMISOS DE OBJETOS
+// PERMITO QUE PUEDA LEER MIS TABLAS OTRO USUARIO 
+GRANT SELECT, UPDATE ON PRODUCTOS TO USUARIO_2;
+
+
+
+
+
+-- Ver todas las bases de datos
+SELECT * FROM v$DATABASE;
+
+-- En Oracle se trabaja con SCHEMAS
+SELECT * FROM dba_users;
+
+-- SYSTEM y SYS sus contraseñas tienen fecha de expiración
+
+
+SELECT * FROM ALL_USERS;
+
+SELECT * FROM BODEGA_MS.marca;
+
+SELECT * FROM PRUEBAN1.cliente;
+
+-- Permite ver el espacio disponible de todos los usuarios
+SELECT * FROM DBA_TS_QUOTAS;
+
+-- Permite ver nuestro almacenamiento
+SELECT * FROM USER_TS_QUOTAS;
+
+-- VISTAS
+WITH READ ONLY;
+
+WITH CHECK OPTION CONSTRAINT CONTROL_uwu;
+
+
+-- Sinonimos 
+CREATE OR REPLACE SYNONYM ola FOR empleado;
+
+-- Privilegios del usuario sys
+SELECT * FROM dba_sys_privs;
+

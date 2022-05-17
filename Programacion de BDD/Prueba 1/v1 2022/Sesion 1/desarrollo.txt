@@ -1,0 +1,146 @@
+
+-- Salida de dbms
+SET SERVEROUTPUT ON;
+
+-- 1
+
+-- Variable BIND
+
+VARIABLE b_anio_proceso varchar2(4);
+
+EXECUTE :b_anio_proceso := TO_CHAR(SYSDATE,'YYYY');
+
+
+PRINT b_anio_proceso;
+
+DECLARE
+    -- declaramos las variables de la tabla
+    v_promedio promedio_asig_alumno.promedio_asig%TYPE;
+    v_situacion promedio_asig_alumno.situacion_asig%TYPE;
+BEGIN 
+
+    FOR x IN (SELECT alu.COD_ALUMNO , a.cod_asignatura, n.nota1,  n.nota2 ,
+                        n.nota3 ,  n.nota4,  n.nota5, c.sigla_curso
+                        FROM ALUMNO alu
+                        INNER JOIN nota_alumno n
+                        ON alu.cod_alumno = n.cod_alumno
+                        INNER JOIN ASIGNATURA a
+                        ON n.cod_asignatura = a.cod_asignatura
+                        INNER JOIN CURSO c
+                        ON alu.cod_curso = c.cod_curso
+                        WHERE substr(c.sigla_curso,1,2) IN ('PM','SM'))
+    LOOP
+        -- aqui hacemos el desarrollo del for
+        -- BLOQUE ANONIMO ANIDADO
+        BEGIN
+           -- Desarrollo
+           -- Objetivo
+           -- Poblar tabla promedio asig alumno
+           
+           -- Calcular el promedio de las notas
+           v_promedio := ROUND( (x.nota1 + x.nota2  +  x.nota3  +  x.nota4 + x.nota5) / 5 , 2);
+           
+           -- Rescatar la situacion por tabla parametrica / tramos
+           select  situacion INTO v_situacion from tramo_situacion_asig where v_promedio between promedio_inf and promedio_sup;
+           
+            -- INSERTAMOS EN LA TABLA PROMEDIO ASIG
+           INSERT INTO PROMEDIO_ASIG_ALUMNO VALUES (x.cod_alumno, x.cod_asignatura, v_promedio, v_situacion);
+           COMMIT;
+        EXCEPTION
+            WHEN NO_DATA_FOUND THEN
+                DBMS_OUTPUT.PUT_LINE('XD');
+            WHEN OTHERS THEN
+                DBMS_OUTPUT.PUT_LINE('XD');
+        END;
+    END LOOP;
+    
+EXCEPTION
+    WHEN OTHERS THEN
+        DBMS_OUTPUT.PUT_LINE('XD');
+END;
+
+-- 2
+
+CREATE SEQUENCE SEQ_RESUMEN_APROBADOS;
+
+
+BEGIN
+    FOR i IN (SELECT alu.numrut_alumno, alu.DVRUT_ALUMNO, alu.PNOMBRE_ALUMNO, 
+                        nvl(alu.SNOMBRE_ALUMNO,'No tiene') as "snombre", alu.APPAT_ALUMNO,
+                        alu.APMAT_ALUMNO, SIGLA_CURSO, SIGLA_ASIGNATURA
+                        FROM PROMEDIO_ASIG_ALUMNO p
+                        INNER JOIN ALUMNO alu
+                        ON alu.cod_alumno = p.cod_alumno
+                        INNER JOIN CURSO c
+                        ON alu.cod_curso = c.cod_curso
+                        INNER JOIN ASIGNATURA asig
+                        ON p.cod_asignatura = asig.cod_asignatura
+                        WHERE UPPER(situacion_asig) = 'APROBADO' and substr(c.sigla_curso,1,2) IN ('PM','SM'))
+    LOOP 
+        BEGIN 
+        
+        -- Desarrollo
+        
+        -- Objetivo poblar tabla resumen aprobados
+        
+        INSERT INTO RESUMEN_APROBADOS VALUES (SEQ_RESUMEN_APROBADOS.NEXTVAL, i.numrut_alumno, 
+        i.DVRUT_ALUMNO, i.PNOMBRE_ALUMNO, i."snombre", i.APPAT_ALUMNO, i.APMAT_ALUMNO,
+        i.SIGLA_CURSO, i.SIGLA_ASIGNATURA, :b_anio_proceso);
+        
+        EXCEPTION
+            WHEN OTHERS THEN 
+                DBMS_OUTPUT.PUT_LINE('ERROR');
+        END;
+    END LOOP;
+END;
+
+
+
+-- 3
+
+CREATE SEQUENCE SEQ_REPROBADOS;
+
+/*
+DECLARE
+    v_num number default 200;
+*/
+
+BEGIN 
+    FOR i IN (SELECT NUMRUT_ALUMNO, DVRUT_ALUMNO, PNOMBRE_ALUMNO,
+                    SNOMBRE_ALUMNO, APPAT_ALUMNO, APMAT_ALUMNO, SIGLA_CURSO, SIGLA_ASIGNATURA, p.situacion_asig
+                    FROM ALUMNO alu
+                    INNER JOIN CURSO c
+                    ON alu.cod_curso = c.cod_curso
+                    INNER JOIN promedio_asig_alumno p
+                    ON p.cod_alumno = alu.cod_alumno
+                    INNER JOIN ASIGNATURA asig
+                    ON p.cod_asignatura = asig.cod_asignatura
+                    WHERE SUBSTR(SIGLA_CURSO,1,2) IN ('PM','SM'))
+    LOOP
+        BEGIN
+            -- Desarrollo
+            
+            IF i.situacion_asig = 'REPROBADO' THEN 
+                INSERT INTO RESUMEN_REPROBADOS VALUES (SEQ_REPROBADOS.NEXTVAL, i.NUMRUT_ALUMNO, i.DVRUT_ALUMNO, i.PNOMBRE_ALUMNO, 
+                i.SNOMBRE_ALUMNO, i.APPAT_ALUMNO, i.APMAT_ALUMNO, i.SIGLA_CURSO, i.SIGLA_ASIGNATURA, :b_anio_proceso);
+            
+                COMMIT;
+                
+            END IF;
+            
+            
+            
+            -- forzar error zero divide
+            --v_num := v_num / 0;
+            
+        EXCEPTION
+            WHEN ZERO_DIVIDE THEN
+                DBMS_OUTPUT.PUT_LINE('SE DIVIDIO POR CERO');  
+            WHEN OTHERS THEN
+                DBMS_OUTPUT.PUT_LINE('Error en el cursor');
+
+        END;
+    END LOOP;
+END;
+
+

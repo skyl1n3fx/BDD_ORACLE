@@ -1,0 +1,161 @@
+
+-- Un torpedo y repaso de Programación de BDD
+-- Hecho con cariño para ti 
+-- Espero te sirva<3!
+
+
+-- Bloque anónimo 
+
+-- Permite ver la salida de DBMS en consola
+SET SERVEROUTPUT ON;
+
+-- Permite que no te muestre una verificación del Bloque en consola al usar variables con &
+SET VERIFY OFF;
+
+
+-- Bucle WHILE
+DECLARE 
+    v_contador NUMBER DEFAULT 1;
+    v_maximo NUMBER := &maximo;
+BEGIN 
+    WHILE v_contador <= v_maximo
+        LOOP
+            dbms_output.put_line('Contador : ' || v_contador);
+            v_contador := v_contador + 1;
+    END LOOP;
+END;
+
+-- Bucle básico
+DECLARE 
+    v_contador NUMBER DEFAULT 1;
+    v_maximo NUMBER := &maximo;
+BEGIN
+    LOOP
+        dbms_output.put_line('Contador : ' || v_contador);
+        v_contador := v_contador + 1;
+        EXIT WHEN v_contador > v_maximo;
+    END LOOP;
+END;
+
+-- Bucle FOR
+DECLARE 
+    v_contador NUMBER DEFAULT 1;
+    v_maximo NUMBER := &maximo;
+BEGIN
+    FOR v_contador IN 1..v_maximo
+    LOOP
+        dbms_output.put_line('Contador : ' || v_contador);
+    END LOOP;
+END;
+
+
+
+
+-- NOTA 
+-- BLOQUE EXCEPTION TE PERMITE CONTROLAR ERRORES
+-- ALGUNOS DE LOS MÁS COMUNES SON
+-- ZERO_DIVIDE
+-- TOO_MANY_ROWS
+-- NO_DATA_FOUND
+-- DUP_VAL_ON_INDEX
+-- EL COMODIN ES WHEN OTHERS PARA CAPTURAR CUALQUIER ERROR
+
+-- Muestran errores reservados de ORACLE
+-- SQLERRM PERMITE MOSTRAR EL MENSAJE DEL ERROR
+-- SQL%CODE PERMITE MOSTRAR EL CÓDIGO DEL ERROR
+
+-- While para CURSORES EXPLICITOS
+
+DECLARE
+    -- Declaramos un registro
+    emp_reg emp%rowtype;
+    -- Declaramos un cursor
+    CURSOR c1 IS SELECT * FROM emp;
+BEGIN
+    -- ABRIMOS EL CURSOR para manipular su data
+    OPEN c1;
+        -- Recuperamos la información del primer registro del SELECT (CURSOR)
+            FETCH c1 INTO emp_reg;
+        WHILE c1%found
+            LOOP
+                BEGIN
+                    dbms_output.put_line(emp_reg.NAME);
+                    -- Recupera toda la info de cada fila del cursor MIENTRAS el CURSOR tenga datos
+                    FETCH c1 INTO emp_reg;
+                EXCEPTION
+                    WHEN OTHERS THEN
+                        DBMS_OUTPUT.PUT_LINE('Código de ERROR ' || sql%code || 'Mensaje de error' || sqlerrm);
+                        DBMS_OUTPUT.PUT_LINE('Error con el registro ' || emp_reg.id);
+                END;
+            END LOOP;
+    -- Cerramos el cursor para optimizar la BDD
+    CLOSE c1;
+END;
+
+
+-- FOR para CURSORES EXPLICITOS
+DECLARE
+    -- Declaramos un registro
+    emp_reg emp%rowtype;
+    -- Declaramos un cursor
+    CURSOR c1 IS SELECT * FROM emp;
+BEGIN 
+    FOR x IN c1
+        LOOP
+            BEGIN
+                DBMS_OUTPUT.PUT_LINE(emp_reg.name);
+            EXCEPTION
+                WHEN OTHERS THEN
+                    DBMS_OUTPUT.PUT_LINE('Código de ERROR ' || sql%code || 'Mensaje de error' || sqlerrm);
+                    DBMS_OUTPUT.PUT_LINE('Error con el registro ' || emp_reg.id);
+            END;
+        END LOOP;
+END;
+
+
+
+-- LOOP para CURSORES EXPLICITOS
+DECLARE 
+    -- Declaramos un registro
+    emp_reg emp%rowtype;
+    -- Declaramos un cursor
+    CURSOR c1 IS SELECT * FROM emp;
+BEGIN
+    OPEN c1;
+        LOOP
+            BEGIN 
+                -- Recuperamos las filas del cursor
+                FETCH c1 INTO emp_reg;
+                
+                -- Se deja de recuperar datos cuando no hayan Registros en el cursor 
+                EXIT WHEN c1%NOTFOUND;
+                -- Aquíí ya podemos manipular los datos
+                          DBMS_OUTPUT.PUT_LINE(emp_reg.name);
+            EXCEPTION
+                WHEN OTHERS THEN
+                    DBMS_OUTPUT.PUT_LINE('Código de ERROR ' || sql%code || 'Mensaje de error' || sqlerrm);
+                    DBMS_OUTPUT.PUT_LINE('Error con el registro ' || emp_reg.id);
+            END;
+        END LOOP;
+    CLOSE c1;
+END;
+
+
+
+-- CURSOR IMPLICITO
+-- UN CURSOR IMPLICITO NO USA LA PALABRA RESERVADA CURSOR
+-- UN CURSOR IMPLICITO ES MENOS SEGURO QUE UN CURSOR EXPLICITO
+
+BEGIN
+    FOR x IN (SELECT * FROM emp)
+    LOOP
+        BEGIN 
+            -- Aquí ya se puede manipular los datos
+            DBMS_OUTPUT.PUT_LINE(x.name);
+        EXCEPTION
+            WHEN OTHERS THEN
+                DBMS_OUTPUT.PUT_LINE('Código de ERROR ' || sql%code || 'Mensaje de error' || sqlerrm);
+                DBMS_OUTPUT.PUT_LINE('Error con el registro ' || x.id);
+        END;
+    END LOOP;
+END;

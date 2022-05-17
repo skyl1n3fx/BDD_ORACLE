@@ -1,0 +1,244 @@
+-----------------------------------------
+-- PRUEBA NRO 2
+----------------------------------------
+
+-- NOMBRE : 
+-- SECCIÓN :
+
+
+----------------------------------------
+
+
+
+
+
+-- CASO N1
+----------------------------------------
+
+
+-- Activamos la salida de DBMS
+SET SERVEROUTPUT ON;
+
+---------------------------------------------------------------------
+-- Código del programador
+---------------------------------------------------------------------
+DECLARE
+   -- cursor que recupera los viñateros o productores
+   CURSOR c1 IS
+   SELECT *
+   FROM productor
+   where id_productor in (select id_productor
+                          from producto);
+   -- cursor que recupera productos de cada viñatero
+   -- recibe como parámetro la id del productor
+   CURSOR c2 (n NUMBER) IS
+   SELECT *
+   FROM producto
+   WHERE id_productor = n;
+   counter number := 0;
+BEGIN
+   FOR r1 IN c1 LOOP
+      dbms_output.put_line('####### LISTA DE VINOS DE LA VIÑA ' || '"' || UPPER(r1.nom_productor || '"'));
+      dbms_output.put_line(CHR(13));   
+      dbms_output.put_line(lpad('-',65,'-'));
+      dbms_output.put_line('  ID  NOMBRE PRODUCTO      STOCK  PRECIO ACTUAL   NUEVO PRECIO');
+      dbms_output.put_line(lpad('-',65,'-'));
+      counter := 0;
+      FOR r2 IN c2 (r1.id_productor) LOOP
+         counter := counter + 1;       
+             dbms_output.put_line(r2.id_producto
+                || ' ' || RPAD(r2.nom_producto, 20,' ')
+                || ' ' || TO_CHAR(r2.stock,'999')
+                || ' ' || rpad(TO_CHAR(r2.precio, '$9G999G999'),15, ' ')
+                || ' ' || TO_CHAR(r2.precio * 1.07, '$9G999G999'));
+      END LOOP;      
+      dbms_output.put_line(lpad('-',65,'-'));      
+      dbms_output.put_line('Total de productos en tienda: ' || counter);      
+      dbms_output.put_line(CHR(12));
+   END LOOP;
+ END;
+
+
+---------------------------------------------------------------------
+-- CÓDIGO SOLUCIÓN
+---------------------------------------------------------------------
+
+-- SOLUCIÓN N1 CON LOOP
+
+DECLARE
+    -- cursor que recupera los viñateros o productores
+    CURSOR c1 IS
+    SELECT *
+    FROM productor
+    where id_productor in (select id_productor
+                          from producto);
+    -- cursor que recupera productos de cada viñatero
+    -- recibe como parámetro la id del productor
+    CURSOR c2 (n NUMBER) IS
+    SELECT *
+    FROM producto
+    WHERE id_productor = n;
+    counter number := 0;
+    
+    -- registros de tipo cursor
+    reg_c1 c1%rowtype;
+    reg_c2 c2%rowtype;
+    
+BEGIN
+    OPEN c1;
+        LOOP
+            BEGIN
+                FETCH c1 INTO reg_c1;
+                    dbms_output.put_line('####### LISTA DE VINOS DE LA VIÑA ' || '"' || UPPER(reg_c1.nom_productor || '"'));
+                    dbms_output.put_line(CHR(13));   
+                    dbms_output.put_line(lpad('-',65,'-'));
+                    dbms_output.put_line('  ID  NOMBRE PRODUCTO      STOCK  PRECIO ACTUAL   NUEVO PRECIO');
+                    dbms_output.put_line(lpad('-',65,'-'));
+                    counter := 0;
+                    
+                    -- SEGUNDO CURSOR CON PARAMETRO
+                    OPEN c2(reg_c1.id_productor);
+                        LOOP
+                            FETCH c2 INTO reg_c2;
+                                counter := counter + 1;       
+                                dbms_output.put_line(reg_c2.id_producto
+                                || ' ' || RPAD(reg_c2.nom_producto, 20,' ')
+                                || ' ' || TO_CHAR(reg_c2.stock,'999')
+                                || ' ' || rpad(TO_CHAR(reg_c2.precio, '$9G999G999'),15, ' ')
+                                || ' ' || TO_CHAR(reg_c2.precio * 1.07, '$9G999G999'));
+                            EXIT WHEN c2%notfound;
+                        END LOOP;
+                    CLOSE c2;
+                    
+                  dbms_output.put_line(lpad('-',65,'-'));      
+                  dbms_output.put_line('Total de productos en tienda: ' || counter);      
+                  dbms_output.put_line(CHR(12));
+                  
+                EXIT WHEN c1%notfound;
+            EXCEPTION 
+                WHEN OTHERS THEN
+                    DBMS_OUTPUT.PUT_LINE('ERRORR');
+            END;
+        END LOOP;
+    CLOSE c1;
+END;
+
+-- SOLUCIÓN N2 CON WHILE Y RECORD PERSONALIZADO.
+
+DECLARE 
+   -- cursor que recupera los viñateros o productores
+   CURSOR c1 IS
+   SELECT *
+   FROM productor
+   where id_productor in (select id_productor
+                          from producto);
+   -- cursor que recupera productos de cada viñatero
+   -- recibe como parámetro la id del productor
+   CURSOR c2 (n NUMBER) IS
+   SELECT *
+   FROM producto
+   WHERE id_productor = n;
+   counter number := 0;
+   
+   -- Declaramos los RECORD PERSONALIZADOS
+   TYPE c1_det IS RECORD 
+   (
+        ID_PRODUCTOR PRODUCTOR.ID_PRODUCTOR%TYPE,
+        NOM_PRODUCTOR PRODUCTOR.NOM_PRODUCTOR%TYPE
+   );
+   
+   TYPE c2_det IS RECORD
+   (
+        ID_PRODUCTO PRODUCTO.ID_PRODUCTO %TYPE, 
+        NOM_PRODUCTO PRODUCTO.NOM_PRODUCTO%TYPE, 
+        CRIANZA PRODUCTO.CRIANZA%TYPE, 
+        MARIDAJE PRODUCTO.MARIDAJE%TYPE, 
+        TEMPERATURA PRODUCTO.TEMPERATURA%TYPE, 
+        STOCK PRODUCTO.STOCK %TYPE, 
+        PRECIO PRODUCTO.PRECIO%TYPE, 
+        ID_LINEA PRODUCTO.ID_LINEA%TYPE,  
+        ID_CEPA PRODUCTO.ID_CEPA%TYPE, 
+        ID_PRODUCTOR PRODUCTO.ID_PRODUCTOR%TYPE
+   );
+   
+   -- Creamos variables para los RECORDS
+   reg_c1 c1_det;
+   reg_c2 c2_det;
+   
+BEGIN
+    -- USAR CICLO WHILE
+    OPEN c1;
+                FETCH c1 INTO reg_c1;
+        WHILE c1%FOUND
+            LOOP
+                BEGIN 
+                        FETCH c1 INTO reg_c1;
+                    -- Mostramos los datos
+                        dbms_output.put_line('####### LISTA DE VINOS DE LA VIÑA ' || '"' || UPPER(reg_c1.nom_productor || '"'));
+                        dbms_output.put_line(CHR(13));   
+                        dbms_output.put_line(lpad('-',65,'-'));
+                        dbms_output.put_line('  ID  NOMBRE PRODUCTO      STOCK  PRECIO ACTUAL   NUEVO PRECIO');
+                        dbms_output.put_line(lpad('-',65,'-'));
+                        counter := 0;
+                        
+                        -- ABRIMOS EL SEGUNDO CURSOR
+                      OPEN c2(reg_c1.id_productor);
+                      FETCH c2 INTO reg_c2;
+                            WHILE c2%FOUND
+                                LOOP
+                                    BEGIN
+                                            FETCH c2 INTO reg_c2;
+                                            counter := counter + 1;       
+                                            dbms_output.put_line(reg_c2.id_producto
+                                            || ' ' || RPAD(reg_c2.nom_producto, 20,' ')
+                                            || ' ' || TO_CHAR(reg_c2.stock,'999')
+                                            || ' ' || rpad(TO_CHAR(reg_c2.precio, '$9G999G999'),15, ' ')
+                                            || ' ' || TO_CHAR(reg_c2.precio * 1.07, '$9G999G999'));
+                                    EXCEPTION
+                                        WHEN OTHERS THEN 
+                                            DBMS_OUTPUT.PUT_LINE('ERROR uwu');
+                                    END;
+                                END LOOP;
+                        CLOSE c2;
+                        
+                        dbms_output.put_line(lpad('-',65,'-'));      
+                        dbms_output.put_line('Total de productos en tienda: ' || counter);      
+                        dbms_output.put_line(CHR(12));
+                        
+                EXCEPTION 
+                    WHEN OTHERS THEN 
+                        DBMS_OUTPUT.PUT_LINE('ERROR uwu');
+                END;
+            END LOOP;
+    CLOSE c1;
+END;
+
+
+
+-- CASO N2 
+
+-- EJEMPLO VARRAY
+DECLARE
+    TYPE t_name_type IS VARRAY(2) 
+        OF VARCHAR2(20) NOT NULL;
+        
+    t_names t_name_type  := t_name_type('John','Jane');
+    t_enames t_name_type := t_name_type();
+BEGIN
+    -- initialize to an empty array
+    dbms_output.put_line('The number of elements in t_enames ' || t_enames.COUNT);
+    
+    -- initialize to an array of a elements 
+    dbms_output.put_line('The number of elements in t_names ' || t_names.COUNT);
+    
+    dbms_output.put_line(t_names(1));
+END;
+
+
+/*
+CREATE [OR REPLACE ] TYPE type_name AS | IS
+    VARRAY(max_elements) OF element_type [NOT NULL];
+
+
+*/
+
