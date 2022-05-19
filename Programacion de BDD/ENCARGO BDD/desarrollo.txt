@@ -27,15 +27,15 @@ DECLARE
    CURSOR c1 IS
    SELECT *
    FROM productor
-   where id_productor in (select id_productor
-                          from producto);
+   WHERE id_productor IN (SELECT id_productor
+                          FROM producto);
    -- cursor que recupera productos de cada viñatero
    -- recibe como parámetro la id del productor
-   CURSOR c2 (n NUMBER) IS
+   CURSOR c2 (N NUMBER) IS
    SELECT *
    FROM producto
-   WHERE id_productor = n;
-   counter number := 0;
+   WHERE id_productor = N;
+   counter NUMBER := 0;
 BEGIN
    FOR r1 IN c1 LOOP
       dbms_output.put_line('####### LISTA DE VINOS DE LA VIÑA ' || '"' || UPPER(r1.nom_productor || '"'));
@@ -47,10 +47,10 @@ BEGIN
       FOR r2 IN c2 (r1.id_productor) LOOP
          counter := counter + 1;       
              dbms_output.put_line(r2.id_producto
-                || ' ' || RPAD(r2.nom_producto, 20,' ')
-                || ' ' || TO_CHAR(r2.stock,'999')
-                || ' ' || rpad(TO_CHAR(r2.precio, '$9G999G999'),15, ' ')
-                || ' ' || TO_CHAR(r2.precio * 1.07, '$9G999G999'));
+                || ' ' || rpad(r2.nom_producto, 20,' ')
+                || ' ' || to_char(r2.stock,'999')
+                || ' ' || rpad(to_char(r2.precio, '$9G999G999'),15, ' ')
+                || ' ' || to_char(r2.precio * 1.07, '$9G999G999'));
       END LOOP;      
       dbms_output.put_line(lpad('-',65,'-'));      
       dbms_output.put_line('Total de productos en tienda: ' || counter);      
@@ -70,15 +70,15 @@ DECLARE
     CURSOR c1 IS
     SELECT *
     FROM productor
-    where id_productor in (select id_productor
-                          from producto);
+    WHERE id_productor IN (SELECT id_productor
+                          FROM producto);
     -- cursor que recupera productos de cada viñatero
     -- recibe como parámetro la id del productor
-    CURSOR c2 (n NUMBER) IS
+    CURSOR c2 (N NUMBER) IS
     SELECT *
     FROM producto
-    WHERE id_productor = n;
-    counter number := 0;
+    WHERE id_productor = N;
+    counter NUMBER := 0;
     
     -- registros de tipo cursor
     reg_c1 c1%rowtype;
@@ -102,10 +102,10 @@ BEGIN
                             FETCH c2 INTO reg_c2;
                                 counter := counter + 1;       
                                 dbms_output.put_line(reg_c2.id_producto
-                                || ' ' || RPAD(reg_c2.nom_producto, 20,' ')
-                                || ' ' || TO_CHAR(reg_c2.stock,'999')
-                                || ' ' || rpad(TO_CHAR(reg_c2.precio, '$9G999G999'),15, ' ')
-                                || ' ' || TO_CHAR(reg_c2.precio * 1.07, '$9G999G999'));
+                                || ' ' || rpad(reg_c2.nom_producto, 20,' ')
+                                || ' ' || to_char(reg_c2.stock,'999')
+                                || ' ' || rpad(to_char(reg_c2.precio, '$9G999G999'),15, ' ')
+                                || ' ' || to_char(reg_c2.precio * 1.07, '$9G999G999'));
                             EXIT WHEN c2%notfound;
                         END LOOP;
                     CLOSE c2;
@@ -117,7 +117,7 @@ BEGIN
                 EXIT WHEN c1%notfound;
             EXCEPTION 
                 WHEN OTHERS THEN
-                    DBMS_OUTPUT.PUT_LINE('ERRORR');
+                    dbms_output.put_line('ERRORR');
             END;
         END LOOP;
     CLOSE c1;
@@ -130,35 +130,35 @@ DECLARE
    CURSOR c1 IS
    SELECT *
    FROM productor
-   where id_productor in (select id_productor
-                          from producto);
+   WHERE id_productor IN (SELECT id_productor
+                          FROM producto);
    -- cursor que recupera productos de cada viñatero
    -- recibe como parámetro la id del productor
-   CURSOR c2 (n NUMBER) IS
+   CURSOR c2 (N NUMBER) IS
    SELECT *
    FROM producto
-   WHERE id_productor = n;
-   counter number := 0;
+   WHERE id_productor = N;
+   counter NUMBER := 0;
    
    -- Declaramos los RECORD PERSONALIZADOS
    TYPE c1_det IS RECORD 
    (
-        ID_PRODUCTOR PRODUCTOR.ID_PRODUCTOR%TYPE,
-        NOM_PRODUCTOR PRODUCTOR.NOM_PRODUCTOR%TYPE
+        id_productor productor.id_productor%TYPE,
+        nom_productor productor.nom_productor%TYPE
    );
    
    TYPE c2_det IS RECORD
    (
-        ID_PRODUCTO PRODUCTO.ID_PRODUCTO %TYPE, 
-        NOM_PRODUCTO PRODUCTO.NOM_PRODUCTO%TYPE, 
-        CRIANZA PRODUCTO.CRIANZA%TYPE, 
-        MARIDAJE PRODUCTO.MARIDAJE%TYPE, 
-        TEMPERATURA PRODUCTO.TEMPERATURA%TYPE, 
-        STOCK PRODUCTO.STOCK %TYPE, 
-        PRECIO PRODUCTO.PRECIO%TYPE, 
-        ID_LINEA PRODUCTO.ID_LINEA%TYPE,  
-        ID_CEPA PRODUCTO.ID_CEPA%TYPE, 
-        ID_PRODUCTOR PRODUCTO.ID_PRODUCTOR%TYPE
+        id_producto producto.id_producto %TYPE, 
+        nom_producto producto.nom_producto%TYPE, 
+        crianza producto.crianza%TYPE, 
+        maridaje producto.maridaje%TYPE, 
+        temperatura producto.temperatura%TYPE, 
+        stock producto.stock %TYPE, 
+        precio producto.precio%TYPE, 
+        id_linea producto.id_linea%TYPE,  
+        id_cepa producto.id_cepa%TYPE, 
+        id_productor producto.id_productor%TYPE
    );
    
    -- Creamos variables para los RECORDS
@@ -169,7 +169,7 @@ BEGIN
     -- USAR CICLO WHILE
     OPEN c1;
                 FETCH c1 INTO reg_c1;
-        WHILE c1%FOUND
+        WHILE c1%found
             LOOP
                 BEGIN 
                         FETCH c1 INTO reg_c1;
@@ -184,19 +184,19 @@ BEGIN
                         -- ABRIMOS EL SEGUNDO CURSOR
                       OPEN c2(reg_c1.id_productor);
                       FETCH c2 INTO reg_c2;
-                            WHILE c2%FOUND
+                            WHILE c2%found
                                 LOOP
                                     BEGIN
                                             FETCH c2 INTO reg_c2;
                                             counter := counter + 1;       
                                             dbms_output.put_line(reg_c2.id_producto
-                                            || ' ' || RPAD(reg_c2.nom_producto, 20,' ')
-                                            || ' ' || TO_CHAR(reg_c2.stock,'999')
-                                            || ' ' || rpad(TO_CHAR(reg_c2.precio, '$9G999G999'),15, ' ')
-                                            || ' ' || TO_CHAR(reg_c2.precio * 1.07, '$9G999G999'));
+                                            || ' ' || rpad(reg_c2.nom_producto, 20,' ')
+                                            || ' ' || to_char(reg_c2.stock,'999')
+                                            || ' ' || rpad(to_char(reg_c2.precio, '$9G999G999'),15, ' ')
+                                            || ' ' || to_char(reg_c2.precio * 1.07, '$9G999G999'));
                                     EXCEPTION
                                         WHEN OTHERS THEN 
-                                            DBMS_OUTPUT.PUT_LINE('ERROR uwu');
+                                            dbms_output.put_line('ERROR uwu');
                                     END;
                                 END LOOP;
                         CLOSE c2;
@@ -207,7 +207,7 @@ BEGIN
                         
                 EXCEPTION 
                     WHEN OTHERS THEN 
-                        DBMS_OUTPUT.PUT_LINE('ERROR uwu');
+                        dbms_output.put_line('ERROR uwu');
                 END;
             END LOOP;
     CLOSE c1;
@@ -217,28 +217,226 @@ END;
 
 -- CASO N2 
 
--- EJEMPLO VARRAY
-DECLARE
-    TYPE t_name_type IS VARRAY(2) 
-        OF VARCHAR2(20) NOT NULL;
+
+
+
+-- DECLARACIÓN DE VARIABLES BIND
+VAR b_fecha_proceso VARCHAR2(10);
+VAR b_valor_limite NUMBER;
+
+-- ASIGNAR VALOR 
+EXECUTE :b_valor_limite := 90000;
+
+-- VERIFICAR VALOR
+PRINT :b_valor_limite;
+
+
+-- DECLARACIÓN DE TIPOS VARRAYS
+-- VARRAY PARA LOS DESCUENTOS
+CREATE OR REPLACE TYPE tipo_descuentos IS 
+VARRAY(5) OF NUMBER NOT NULL;
+
+-- VARRAY PARA EL VALOR DEL DELIVERY
+CREATE OR REPLACE TYPE tipo_valor_delivery IS
+VARRAY(1) OF NUMBER NOT NULL;
+
+
+-- MES DE MAYO DE 2021
+
+SET SERVEROUTPUT ON;
+
+-- BLOQUE ANÓNIMO
+DECLARE 
+
+    -- PRIMER CURSOR QUE RECORRE LAS LINEAS
+    CURSOR c1 IS 
+        SELECT id_linea 
+        FROM linea
+        ORDER BY nom_linea ASC;
+    
+    -- SEGUNDO CURSOR QUE FILTRA POR LINEA Y FECHA LA CANTIDAD DE VENTAS Y EL MONTO VENTAS
+
+    CURSOR c2 (p_lineaid NUMBER, p_fecha DATE) IS 
+        SELECT L.nom_linea, nvl(COUNT(V.id_venta),0) AS "numero_ventas", SUM(nvl(P.precio * D.cantidad,0)) AS "monto_ventas"
+        FROM linea L
+        LEFT JOIN producto P
+        ON L.id_linea = P.id_linea
+        LEFT JOIN detalle_venta D
+        ON D.id_producto = P.id_producto
+        LEFT JOIN venta V
+        ON D.id_venta = V.id_venta
+        WHERE  L.id_linea = p_lineaid
+        GROUP BY L.id_linea, L.nom_linea, to_char(V.fec_venta,'MM/YYYY')
+        HAVING to_char(V.fec_venta,'MM/YYYY') = to_char(p_fecha,'MM/YYYY') OR to_char(V.fec_venta,'MM/YYYY') IS NULL ;
         
-    t_names t_name_type  := t_name_type('John','Jane');
-    t_enames t_name_type := t_name_type();
+        -- TERCER CURSOR QUE FILTRA CANTIDAD DE MONTO VENTAS POR DIA SEGÚN MES Y AÑO
+        CURSOR c3 (p_lineaid IN NUMBER, p_fecha DATE) IS
+            SELECT  L.id_linea, L.nom_linea,  SUM(nvl(P.precio * D.cantidad,0)) AS "monto", COUNT(V.id_venta) AS "ventas_dia", to_char(V.fec_venta,'dd/MM/YYYY') AS "fecha"
+                FROM linea L
+                LEFT JOIN producto P
+                ON L.id_linea = P.id_linea
+                LEFT JOIN detalle_venta D
+                ON D.id_producto = P.id_producto
+                LEFT JOIN venta V
+                ON D.id_venta = V.id_venta
+                WHERE L.id_linea = p_lineaid AND (to_char(V.fec_venta,'MM/YYYY') = to_char(p_fecha,'MM/YYYY') OR to_char(V.fec_venta,'MM/YYYY') IS NULL)
+                GROUP BY L.id_linea, L.nom_linea, to_char(V.fec_venta,'dd/MM/YYYY')
+                ORDER BY L.id_linea;
+
+    
+    -- CREAMOS LOS REGISTROS PARA RECIBIR LA DATA DE LOS CURSORES
+    reg_c1 c1%rowtype;
+    reg_c2 c2%rowtype;
+    reg_c3 c3%rowtype;
+    
+    -- CREAMOS REGISTRO PARA POBLAR LA TABLA
+    reg_resumen resumen_linea%rowtype;
+    
+    -- VARIABLES
+    pct_impuesto impuesto.pctimpuesto%TYPE;
+    v_dia  NUMBER(2);
+    v_mes NUMBER(2);
+    v_anio NUMBER(4);
+    v_mensaje error_proceso.ora_msg%TYPE;
+    
+    -- VALOR DELIVERY
+    t_delivery tipo_valor_delivery := tipo_valor_delivery(1500);
+    
+    -- PORCENTAJES DE DESCUENTO POR LÍNEA
+    t_pct_desc_l tipo_descuentos := tipo_descuentos(0.19,0.17,0.15,0.13,0.11);
+    
+    -- CREAR EXCEPTION
+   limite_superado EXCEPTION;
+   PRAGMA exception_init( limite_superado, -20001 );
+
+    
+   
 BEGIN
-    -- initialize to an empty array
-    dbms_output.put_line('The number of elements in t_enames ' || t_enames.COUNT);
+    -- TRUNCAR TABLAS
+    EXECUTE IMMEDIATE 'TRUNCATE TABLE RESUMEN_LINEA';
+    EXECUTE IMMEDIATE 'TRUNCATE TABLE ERROR_PROCESO';
     
-    -- initialize to an array of a elements 
-    dbms_output.put_line('The number of elements in t_names ' || t_names.COUNT);
+    -- REINICIAR SEQUENCIA
+    EXECUTE IMMEDIATE 'DROP SEQUENCE SEQ_ERROR';
+    EXECUTE IMMEDIATE 'CREATE SEQUENCE SEQ_ERROR';
     
-    dbms_output.put_line(t_names(1));
+    -- VALOR FECHA PROCESO
+    v_dia := &dia;
+    v_mes := &mes;
+    v_anio := &anio;
+    
+    :b_fecha_proceso := v_dia || '/' || v_mes || '/' ||+v_anio;
+    
+    FOR X IN c1 
+        LOOP
+            BEGIN
+                reg_c1 := X;
+                
+                --DBMS_OUTPUT.PUT_LINE(reg_c1.id_linea);
+                -- ABRIMOS NUESTRO SEGUNDO CURSOR
+                FOR y IN c2(reg_c1.id_linea, TO_DATE(:b_fecha_proceso))
+                    LOOP
+                        BEGIN
+                        
+                            -- ENTREGO LA DATA AL REGISTRO
+                            reg_c2 := y;
+                            
+                            -- CÁLCULOS
+                            reg_resumen.impuestos := 0;
+                            
+                            FOR z IN c3(reg_c1.id_linea, TO_DATE(:b_fecha_proceso))
+                                LOOP
+                                    BEGIN
+                                    
+                                        -- ASIGNAMOS LOS VALORES DEL CURSOR AL REGISTRO
+                                        reg_c3 := z;
+                                        
+                                        -- RESCATAMOS EL PORCENTAJE DE IMPUESTO
+                                        BEGIN
+                                            SELECT pctimpuesto / 100 INTO pct_impuesto FROM impuesto WHERE reg_c3."monto" BETWEEN mto_venta_inf AND mto_venta_sup;
+                                        EXCEPTION
+                                            WHEN no_data_found THEN
+                                                v_mensaje := sqlerrm;
+                                                pct_impuesto := 0;
+                                                INSERT INTO error_proceso VALUES (seq_error.NEXTVAL,v_mensaje, 'No se encontró porcentaje de impuesto para el monto de los pedidos del día ' || :b_fecha_proceso);
+                                            WHEN zero_divide THEN
+                                                v_mensaje := sqlerrm;
+                                                pct_impuesto := 0;
+                                                INSERT INTO error_proceso VALUES (seq_error.NEXTVAL,v_mensaje, 'Se intentó dividir por 0 el porcentaje de impuesto para el monto de los pedidos del día ' || :b_fecha_proceso);
+                                        END;
+                                        
+                                        -- CÁLCULAMOS EL IMPUESTO
+                                        BEGIN
+                                            IF pct_impuesto > 0 THEN
+                                                IF round(reg_c3."monto" * pct_impuesto,0)  > :b_valor_limite THEN
+                                                    raise_application_error( -20001, 'This is a custom error' );
+                                                ELSE 
+                                                    reg_resumen.impuestos := reg_resumen.impuestos  + round(reg_c3."monto" * pct_impuesto,0);
+                                                END IF;
+                                                
+                                            ELSE 
+                                                reg_resumen.impuestos := reg_resumen.impuestos;
+                                            END IF;
+                                        EXCEPTION 
+                                            WHEN limite_superado THEN 
+                                                v_mensaje := sqlerrm;
+                                                dbms_output.put_line('SUPERA EL LIMITE');
+                                                reg_resumen.impuestos := reg_resumen.impuestos  + :b_valor_limite;
+                                                INSERT INTO error_proceso VALUES (seq_error.NEXTVAL,v_mensaje, 'Se reemplaza el monto de impuesto calculada de ' ||  to_char(round(reg_c3."monto" * pct_impuesto,0),'$999G999') ||' por el monto límite de $90.000.');
+                                            WHEN OTHERS THEN
+                                                reg_resumen.impuestos :=0;
+                                        END;
+                                        
+
+                                        
+                                    EXCEPTION
+                                        WHEN OTHERS THEN
+                                            v_mensaje := sqlerrm;
+                                            INSERT INTO error_proceso VALUES (seq_error.NEXTVAL,v_mensaje,  'Se encontró más de un porcentaje de impuesto para el monto de los pedidos del día ' || :b_fecha_proceso);
+                                    END;
+                                END LOOP;
+
+                            
+                            -- CÁCULAR EL DESCUENTO POR LÍNEA
+                            
+                            -- RESERVA ESPECIAL 19%
+                            IF reg_c1.id_linea = 6 THEN
+                                reg_resumen.desctos_linea := round(reg_c2."monto_ventas" * t_pct_desc_l(1),0);
+                            -- RESERVA 17%
+                            ELSIF reg_c1.id_linea = 1 THEN
+                                reg_resumen.desctos_linea := round(reg_c2."monto_ventas" * t_pct_desc_l(2),0);
+                            -- GRAN RESERVA 15%
+                            ELSIF reg_c1.id_linea = 7 THEN
+                                reg_resumen.desctos_linea := round(reg_c2."monto_ventas" * t_pct_desc_l(3),0);
+                            -- SELECCIÓN 13%
+                            ELSIF reg_c1.id_linea = 5 THEN  
+                                reg_resumen.desctos_linea := round(reg_c2."monto_ventas" * t_pct_desc_l(4),0);
+                            -- OTROS 11%
+                            ELSE 
+                                reg_resumen.desctos_linea := round(reg_c2."monto_ventas" * t_pct_desc_l(5),0);
+                            END IF;
+                            
+                            reg_resumen.linea := reg_c2.nom_linea; 
+                            reg_resumen.num_ventas := reg_c2."numero_ventas";
+                            reg_resumen.monto_ventas := reg_c2."monto_ventas";
+                            reg_resumen.monto_delivery := t_delivery(1) * reg_resumen.num_ventas;
+                            reg_resumen.monto_descuentos:= reg_resumen.impuestos + reg_resumen.monto_delivery + reg_resumen.desctos_linea;
+                            reg_resumen.total_ventas :=  reg_resumen.monto_ventas - reg_resumen.monto_descuentos;
+                            
+                            -- OBJETIVO
+                            
+                            -- INSERTAR EN LA TABLA RESUMEN LINEA
+                            INSERT INTO resumen_linea VALUES reg_resumen;
+                        
+                        EXCEPTION
+                            WHEN OTHERS THEN
+                                dbms_output.put_line('HAY UN ERROR EN C2' || SQLCODE || sqlerrm);            
+                        END;
+                    END LOOP;
+            EXCEPTION
+                WHEN OTHERS THEN
+                    dbms_output.put_line('HAY UN ERROR EN C1');
+            END;
+        END LOOP;
+        
 END;
-
-
-/*
-CREATE [OR REPLACE ] TYPE type_name AS | IS
-    VARRAY(max_elements) OF element_type [NOT NULL];
-
-
-*/
-
